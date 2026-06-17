@@ -10,8 +10,7 @@ misinformation project.
 - The main graph is generated with `networkx.barabasi_albert_graph`, which produces a
   preferential-attachment network with heterogeneous degree.
 
-Mesa is useful here, but the network itself should be generated with NetworkX. The code keeps
-one Mesa agent per NetworkX node in `model.agent_by_node`.
+Mesa is useful here, but the network itself should be generated with NetworkX.
 
 ## Game-theoretic element
 
@@ -28,20 +27,4 @@ From the project directory:
 
 ```bash
 uv sync --extra dev
-uv run pytest
-```
-
-## Project structure
-
-```text
-src/misinfo_abm/
-  agent.py          agent decisions, utilities and payoffs
-  config.py         all model parameters
-  model.py          network, diffusion, recovery and learning
-  experiments.py    factorial design
-  sensitivity.py    Morris screening
-  plotting.py       basic plots
-  cli.py            command-line interface
-tests/
-  test_model.py
 ```
