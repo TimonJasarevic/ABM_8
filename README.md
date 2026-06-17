@@ -21,18 +21,6 @@ Dilemma. Each exposed agent strategically chooses:
 - `verify`, paying a private verification cost;
 - `share`, avoiding that cost but risking penalties if the message is false.
 
-For agent `i`, the four material payoffs are:
-
-```text
-pi_i(V,T) = a*n_i - c_v
-pi_i(V,F) = d*n_i - c_v
-pi_i(D,T) = a*n_i
-pi_i(D,F) = a*n_i - p_det_i * (l_f*n_i + l_r*r_i)
-```
-
-Agents evaluate these outcomes using subjective truth beliefs, risk aversion, loss aversion,
-and a logit decision rule. They then imitate locally successful neighbours using a Fermi rule.
-That is sufficient to formalize strategic interaction using game theory.
 
 ## Install and run
 
@@ -42,59 +30,6 @@ From the project directory:
 uv sync --extra dev
 uv run pytest
 ```
-
-Run one configuration:
-
-```bash
-uv run misinfo-abm run \
-  --seed-mode hub \
-  --hub-strategy cooperative \
-  --payoff-mode normalized \
-  --episodes 40
-```
-
-Run the minimum factorial experiment:
-
-```bash
-uv run misinfo-abm factorial --replications 20
-```
-
-This compares:
-
-1. hub versus random seeding;
-2. cooperative versus non-verifying hubs;
-3. normalized versus accumulated payoff learning.
-
-Generate basic plots:
-
-```bash
-uv run misinfo-abm plot
-```
-
-Run Morris screening:
-
-```bash
-uv run misinfo-abm morris --trajectories 20 --replications 5
-```
-
-## Suggested workflow for the nine-day project
-
-1. First run with `n_agents=40`, `n_episodes=5`, and two replications while debugging.
-2. Validate diffusion and recovery manually on fixed random seeds.
-3. Freeze the model rules before starting the final experiments.
-4. Use at least 20 to 30 stochastic replications per factorial condition.
-5. Run Morris screening after the main model and metrics are stable.
-
-## Important modelling decisions
-
-- `random` seeding deliberately excludes hubs, so it creates a clean comparison with hub
-  seeding.
-- Hub strategies are fixed in the main treatment. Other agents adapt.
-- Degree-normalized payoff is the recommended main specification.
-- Accumulated payoff is retained as a robustness comparison.
-- False beliefs can disappear through local correction and forgetting.
-- All parameter values are assumptions. They must be justified and sensitivity-tested rather
-  than presented as empirical facts.
 
 ## Project structure
 
