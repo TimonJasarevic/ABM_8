@@ -19,18 +19,40 @@ class SocialAgent(mesa.Agent):
         self.is_influencer = is_influencer
         self.message_state = MessageState.Unaware
 
-    def decide_cooperation(self, message, agent_id, agent_r):
+    
+
+
+    def receive_message(self, message, agent_id, agent_r):
         # based on agent params decide to verify or pass message
-        pass
-
+        if self.message_state == MessageState.Unaware:
+            # check message
+            if self.model.random.random() < 0.4:
+                # message turned out true
+                if message:
+                    self.message_state = MessageState.TrueBeliever
+                    return 1
+                # message turned out false
+                else:
+                    self.message_state = MessageState.Corrected
+                    return 0
+            # dont check message
+            else:
+                # unaware message is false
+                if not message:
+                    self.message_state = MessageState.FalseBeliever
+                    return 1
+                # unaware message is true
+                else:
+                    self.message_state = MessageState.TrueBeliever
+                    return 1
+            
     def initiate_message(self):
-        pass
+        # only false messages
+        message = False
+        self.message_state = MessageState.FalseBeliever
+        return message
 
-    def share_message(self):
-        pass
 
-    def verify_message(self):
-        pass
 
 
 class NormalUser(SocialAgent):

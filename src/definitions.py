@@ -5,8 +5,11 @@ class NetworkType(Enum):
     Random = 2
 
 class MessageState(Enum):
-    Unaware = 1
-    Exposed = 2
-    FalseBeliever = 3
-    TrueBeliever = 4
-    Corrected = 5
+    Unaware = 1        # has not seen the message
+    FalseBeliever = 2  # believes a false message
+    TrueBeliever = 3   # believes a true message
+    Corrected = 4      # knows the message is false
+
+class AgentType(Enum):
+    NormalUser = 1
+    Influencer = 2

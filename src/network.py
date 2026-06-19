@@ -2,7 +2,7 @@ import mesa
 import networkx as nx
 
 from mesa.space import NetworkGrid
-from definitions import NetworkType
+from definitions import NetworkType, AgentType, MessageState
 import agents
 
 
@@ -20,6 +20,7 @@ class SocialNetwork(mesa.Model):
         self.influencer_nodes = []
 
         self.social_agents = []
+        self.influencers = []
 
         if network_type == NetworkType.Random:
             self.G = nx.erdos_renyi_graph(n, p)
@@ -77,6 +78,7 @@ class SocialNetwork(mesa.Model):
                     1,
                     neighbor_ids
                 )
+                self.influencers.append(agent)
 
             else:
                 agent = agents.NormalUser(
@@ -90,3 +92,63 @@ class SocialNetwork(mesa.Model):
 
             self.grid.place_agent(agent, node)
             self.social_agents.append(agent)
+
+
+    def simulation_step(self, max_steps=20):
+        self._reset_message_states()
+
+        # choose who starts the message
+        initiator_agent = self._choose_initiator(AgentType.Influencer)
+
+        # initiator creates the message
+        message = initiator_agent.initiate_message()
+
+        # active_sharers contains agent objects
+        active_sharers = [initiator_agent]
+
+        step = 0
+
+        while active_sharers and step < max_steps:
+            exposed_nodes = set()
+
+            # collect all neighbors that receive the message this step
+            for sender_agent in active_sharers:
+                for neighbor_node in sender_agent.neighbor_ids:
+                    neighbor_agent = self.social_agents[neighbor_node]
+
+                    # only expose agents that have not received this message yet
+                    if neighbor_agent.message_state == MessageState.Unaware:
+                        exposed_nodes.add(neighbor_node)
+
+            new_sharers = []
+
+            # let exposed agents decide whether they share further
+            for node in exposed_nodes:
+                receiver_agent = self.social_agents[node]
+
+                #TODO: fix so sender is not initiator but previous node
+                agent_response = receiver_agent.receive_message(
+                    message,
+                    initiator_agent.node_id,
+                    initiator_agent.r
+                )
+
+                # assuming 1 means "shares further"
+                if agent_response == 1:
+                    new_sharers.append(receiver_agent)
+
+            active_sharers = new_sharers
+            step += 1
+
+    #TODO: fix for no initiators
+    def _choose_initiator(self, seed_type):
+        if seed_type == AgentType.Influencer:
+            return self.random.choice(self.influencers)
+        elif seed_type == AgentType.NormalUser:       
+            return self.random.choice(
+                list(set(self.social_agents).difference(self.influencers))
+            )
+            
+    def _reset_message_states(self):
+        for agent in self.social_agents:
+            agent.message_state = MessageState.Unaware
