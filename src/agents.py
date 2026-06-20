@@ -47,9 +47,12 @@ class SocialAgent(mesa.Agent):
                     return 1
             
     def initiate_message(self):
-        # only false messages
-        message = False
-        self.message_state = MessageState.FalseBeliever
+        # message is true with probability truthfulness, fake otherwise
+        message = self.model.random.random() < self.model.truthfulness
+        if message:
+            self.message_state = MessageState.TrueBeliever
+        else:
+            self.message_state = MessageState.FalseBeliever
         return message
 
 
