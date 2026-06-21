@@ -15,6 +15,7 @@ class SocialNetwork(mesa.Model):
         self.m = m
         self.influencer_th = influencer_th
         self.truthfulness = truthfulness   # global P(message is true); fraction of true vs fake messages
+        self.network_type = network_type
 
         self.G = None
         self.grid = None
@@ -22,29 +23,12 @@ class SocialNetwork(mesa.Model):
 
         self.social_agents = []
         self.influencers = []
-
-        if network_type == NetworkType.Random:
-            self.G = nx.erdos_renyi_graph(n, p)
-
-        elif network_type == NetworkType.ScaleFree:
-            G_without_influencer = True
-            tries = 0
-
-            while G_without_influencer and tries < 50:
-                self.G = nx.barabasi_albert_graph(n, m)
-                influencers = self._check_for_influencers()
-
-                if len(influencers) != 0:
-                    G_without_influencer = False
-                    self.influencer_nodes = influencers
-
-                tries += 1
-
-            if G_without_influencer:
-                print("Ease the influencer threshold or initialize more nodes\n")
-
+        if not self._generate_network(network_type):
+            raise ValueError("Ease the influencer threshold or initialize more nodes\n")
         self.grid = NetworkGrid(self.G)
         self._init_agents()
+
+    
 
     def _check_for_influencers(self):
         top_fraction = 0.05
@@ -64,6 +48,27 @@ class SocialNetwork(mesa.Model):
         ]
 
         return influencers
+
+    def _generate_network(self, network_type):
+        if network_type == NetworkType.Random:
+            self.G = nx.erdos_renyi_graph(self.n, self.p)
+            return 1
+
+        elif network_type == NetworkType.ScaleFree:
+            tries = 0
+
+            while tries < 50:
+                self.G = nx.barabasi_albert_graph(self.n, self.m)
+                influencers = self._check_for_influencers()
+
+                if len(influencers) != 0:
+                    self.influencer_nodes = influencers
+                    return 1
+
+                tries += 1
+            return 0   
+        else:
+            raise ValueError("Unknown network type")
 
     def _init_agents(self):
         for node in self.G.nodes():
@@ -104,34 +109,39 @@ class SocialNetwork(mesa.Model):
         # initiator creates the message
         message = initiator_agent.initiate_message()
 
+        active_agents = {initiator_agent}
+
         # active_sharers contains agent objects
         active_sharers = [initiator_agent]
 
         step = 0
 
         while active_sharers and step < max_steps:
-            exposed_nodes = set()
+            exposed_agents = []
+            seen_agents = set()
 
-            # collect all neighbors that receive the message this step
             for sender_agent in active_sharers:
-                for neighbor_node in sender_agent.neighbor_ids:
-                    neighbor_agent = self.social_agents[neighbor_node]
+                for neighbor_id in sender_agent.neighbor_ids:
+                    neighbor_agent = self.social_agents[neighbor_id]
 
-                    # only expose agents that have not received this message yet
-                    if neighbor_agent.message_state == MessageState.Unaware:
-                        exposed_nodes.add(neighbor_node)
+                    if (
+                        neighbor_agent.message_state == MessageState.Unaware
+                        and neighbor_agent not in seen_agents
+                    ):
+                        exposed_agents.append((sender_agent, neighbor_agent))
+                        seen_agents.add(neighbor_agent)
 
             new_sharers = []
+            active_agents.update(seen_agents)
+
 
             # let exposed agents decide whether they share further
-            for node in exposed_nodes:
-                receiver_agent = self.social_agents[node]
+            for (sender_agent, receiver_agent) in exposed_agents:
 
-                #TODO: fix so sender is not initiator but previous node
                 agent_response = receiver_agent.receive_message(
                     message,
-                    initiator_agent.node_id,
-                    initiator_agent.r
+                    sender_agent.node_id,
+                    sender_agent.r
                 )
 
                 # assuming 1 means "shares further"
@@ -141,15 +151,29 @@ class SocialNetwork(mesa.Model):
             active_sharers = new_sharers
             step += 1
 
+        return active_agents
+
     #TODO: fix for no initiators
     def _choose_initiator(self, seed_type):
-        if seed_type == AgentType.Influencer:
+        if seed_type == AgentType.Influencer and self.network_type == NetworkType.ScaleFree:
             return self.random.choice(self.influencers)
         elif seed_type == AgentType.NormalUser:       
             return self.random.choice(
                 list(set(self.social_agents).difference(self.influencers))
             )
+        else:
+            raise ValueError("Unknown seed type")
             
     def _reset_message_states(self):
         for agent in self.social_agents:
             agent.message_state = MessageState.Unaware
+
+    def _update_agents(self, agent_set):
+        for agent in agent_set:
+            agent.update()
+
+    def run_simulation(self, rounds):
+        for round in range(rounds):
+            active_agents = self.simulation_step(max_steps=20)
+            self._update_agents(active_agents)
+

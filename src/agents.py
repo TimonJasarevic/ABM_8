@@ -55,6 +55,8 @@ class SocialAgent(mesa.Agent):
             self.message_state = MessageState.FalseBeliever
         return message
 
+    def update(self):
+        pass
 
 
 
