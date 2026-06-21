@@ -1,6 +1,6 @@
 import mesa
 import networkx as nx
-
+import math
 from mesa.space import NetworkGrid
 from definitions import NetworkType, AgentType, MessageState
 import agents
@@ -23,6 +23,7 @@ class SocialNetwork(mesa.Model):
 
         self.social_agents = []
         self.influencers = []
+        self.normal_users = []
         if not self._generate_network(network_type):
             raise ValueError("Ease the influencer threshold or initialize more nodes\n")
         self.grid = NetworkGrid(self.G)
@@ -72,17 +73,14 @@ class SocialNetwork(mesa.Model):
 
     def _init_agents(self):
         for node in self.G.nodes():
-            neighbor_ids = self.G.neighbors(node)
             agent = None
 
             if node in self.influencer_nodes:
                 agent = agents.Influencer(
                     self,
                     node,
-                    self.G.degree[node],
                     0.5,
                     1,
-                    neighbor_ids
                 )
                 self.influencers.append(agent)
 
@@ -90,14 +88,13 @@ class SocialNetwork(mesa.Model):
                 agent = agents.NormalUser(
                     self,
                     node,
-                    self.G.degree[node],
                     0.5,
                     1,
-                    neighbor_ids
                 )
 
             self.grid.place_agent(agent, node)
             self.social_agents.append(agent)
+        self.normal_users = list(set(self.social_agents).difference(self.influencers))
 
 
     def simulation_step(self, max_steps=20):
@@ -121,7 +118,7 @@ class SocialNetwork(mesa.Model):
             seen_agents = set()
 
             for sender_agent in active_sharers:
-                for neighbor_id in sender_agent.neighbor_ids:
+                for neighbor_id in self.G.neighbors(sender_agent.node_id):
                     neighbor_agent = self.social_agents[neighbor_id]
 
                     if (
@@ -158,9 +155,7 @@ class SocialNetwork(mesa.Model):
         if seed_type == AgentType.Influencer and self.network_type == NetworkType.ScaleFree:
             return self.random.choice(self.influencers)
         elif seed_type == AgentType.NormalUser:       
-            return self.random.choice(
-                list(set(self.social_agents).difference(self.influencers))
-            )
+            return self.random.choice(self.normal_users)
         else:
             raise ValueError("Unknown seed type")
             
@@ -171,3 +166,62 @@ class SocialNetwork(mesa.Model):
     def update_agents(self, agent_set):
         for agent in agent_set:
             agent.update()
+
+    def rewire_network(self, rewire_prob):
+        rewired_edges = 0
+
+        for agent in self.normal_users:
+            if self.random.random() >= rewire_prob:
+                continue
+
+            agent_id = agent.node_id
+            current_neighbor_ids = list(self.G.neighbors(agent_id))
+
+            if len(current_neighbor_ids) == 0:
+                continue
+
+            current_neighbor_set = set(current_neighbor_ids)
+
+            worst_neighbor_id = None
+            worst_neighbor_r = math.inf
+
+            best_candidate_id = None
+            best_candidate_r = -math.inf
+
+            for neighbor_id in current_neighbor_ids:
+                neighbor_agent = self.social_agents[neighbor_id]
+
+                # Find worst current neighbor
+                if neighbor_agent.r < worst_neighbor_r:
+                    worst_neighbor_id = neighbor_id
+                    worst_neighbor_r = neighbor_agent.r
+
+                # Look at friends-of-friends as possible new neighbors
+                for candidate_id in self.G.neighbors(neighbor_id):
+                    if candidate_id == agent_id:
+                        continue
+
+                    if candidate_id in current_neighbor_set:
+                        continue
+
+                    candidate_agent = self.social_agents[candidate_id]
+
+                    if candidate_agent.r > best_candidate_r:
+                        best_candidate_id = candidate_id
+                        best_candidate_r = candidate_agent.r
+
+            # No possible friend-of-friend found
+            if best_candidate_id is None:
+                continue
+
+            # Only rewire if the candidate is actually better
+            if best_candidate_r <= worst_neighbor_r:
+                continue
+
+            # Replace worst neighbor with best local candidate
+            self.G.remove_edge(agent_id, worst_neighbor_id)
+            self.G.add_edge(agent_id, best_candidate_id)
+
+            rewired_edges += 1
+
+        return rewired_edges
