@@ -168,12 +168,6 @@ class SocialNetwork(mesa.Model):
         for agent in self.social_agents:
             agent.message_state = MessageState.Unaware
 
-    def _update_agents(self, agent_set):
+    def update_agents(self, agent_set):
         for agent in agent_set:
             agent.update()
-
-    def run_simulation(self, rounds):
-        for round in range(rounds):
-            active_agents = self.simulation_step(max_steps=20)
-            self._update_agents(active_agents)
-
