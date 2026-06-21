@@ -8,14 +8,12 @@ class SocialAgent(mesa.Agent):
     # s: skepticism
     # r: reputation
 
-    def __init__(self, model, node_id, d, s, r, neighbor_ids, is_influencer=False):
+    def __init__(self, model, node_id, s, r, is_influencer=False):
         super().__init__(model)
 
         self.node_id = node_id
-        self.d = d
         self.s = s  # skepticism
         self.r = r  # reputation
-        self.neighbor_ids = list(neighbor_ids)
         self.is_influencer = is_influencer
         self.message_state = MessageState.Unaware
 
@@ -61,26 +59,22 @@ class SocialAgent(mesa.Agent):
 
 
 class NormalUser(SocialAgent):
-    def __init__(self, model, node_id, d, s, r, neighbor_ids):
+    def __init__(self, model, node_id, s, r):
         super().__init__(
             model,
             node_id,
-            d,
             s,
             r,
-            neighbor_ids,
             is_influencer=False
         )
 
 
 class Influencer(SocialAgent):
-    def __init__(self, model, node_id, d, s, r, neighbor_ids):
+    def __init__(self, model, node_id, s, r):
         super().__init__(
             model,
             node_id,
-            d,
             s,
             r,
-            neighbor_ids,
             is_influencer=True
         )
