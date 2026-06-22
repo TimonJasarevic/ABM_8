@@ -4,6 +4,7 @@ import math
 from mesa.space import NetworkGrid
 from definitions import NetworkType, AgentType, MessageState
 import agents
+import matplotlib.pyplot as plt
 
 
 class SocialNetwork(mesa.Model):
@@ -225,3 +226,4 @@ class SocialNetwork(mesa.Model):
             rewired_edges += 1
 
         return rewired_edges
+    
