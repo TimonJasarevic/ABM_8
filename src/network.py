@@ -7,12 +7,13 @@ import agents
 
 
 class SocialNetwork(mesa.Model):
-    def __init__(self, network_type, n, p, m, influencer_th=10, truthfulness=0.5, seed=None):
+    def __init__(self, network_type, n, p, m, influencer_th=10, truthfulness=0.5, verification_cost=0.1, seed=None):
         super().__init__(seed=seed)
 
         self.n = n
         self.p = p
         self.m = m
+        self.verification_cost = verification_cost
         self.influencer_th = influencer_th
         self.truthfulness = truthfulness   # global P(message is true); fraction of true vs fake messages
         self.network_type = network_type

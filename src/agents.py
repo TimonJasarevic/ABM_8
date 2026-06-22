@@ -17,32 +17,47 @@ class SocialAgent(mesa.Agent):
         self.is_influencer = is_influencer
         self.message_state = MessageState.Unaware
 
-    
 
+
+    def pay_verification_cost(self):
+        # cost paid when the agent uses verification technology.
+        
+        self.add_payoff(-self.model.verification_cost)
+        self.model.total_verification_cost_paid += self.model.verification_cost    
+
+
+                
 
     def receive_message(self, message, agent_id, agent_r):
-        # based on agent params decide to verify or pass message
-        if self.message_state == MessageState.Unaware:
-            # check message
-            if self.model.random.random() < 0.4:
-                # message turned out true
-                if message:
-                    self.message_state = MessageState.TrueBeliever
-                    return 1
-                # message turned out false
-                else:
-                    self.message_state = MessageState.Corrected
-                    return 0
-            # dont check message
+        # agent only reacts if it has not seen the message before
+        if self.message_state != MessageState.Unaware:
+            return 0
+
+        # verification probability using skepticism
+        verify_probability = self.s
+
+        # agent decides whether to verify the message
+        if self.model.random.random() < verify_probability:
+
+            # pay verification cost
+            self.pay_verification_cost()
+
+            # verification reveals whether the message is true or false
+            if message:
+                self.message_state = MessageState.TrueBeliever
+                return 1
             else:
-                # unaware message is false
-                if not message:
-                    self.message_state = MessageState.FalseBeliever
-                    return 1
-                # unaware message is true
-                else:
-                    self.message_state = MessageState.TrueBeliever
-                    return 1
+                self.message_state = MessageState.Corrected
+                return 0
+
+        # agent does not verify
+        else:
+            if message:
+                self.message_state = MessageState.TrueBeliever
+                return 1
+            else:
+                self.message_state = MessageState.FalseBeliever
+                return 1
             
     def initiate_message(self):
         # message is true with probability truthfulness, fake otherwise
