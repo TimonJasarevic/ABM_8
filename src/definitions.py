@@ -13,3 +13,7 @@ class MessageState(Enum):
 class AgentType(Enum):
     NormalUser = 1
     Influencer = 2
+
+class Action(Enum):
+    Cooperate = 1   # did not spread fake news (verified it, or passed on true news)
+    Defect = 2      # spread fake news

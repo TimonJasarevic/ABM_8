@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 
 
 class SocialNetwork(mesa.Model):
-    def __init__(self, network_type, n, p, m, influencer_th=10, truthfulness=0.5, seed=None):
+    def __init__(self, network_type, n, p, m, influencer_th=10, truthfulness=0.5,
+                 verify_cost=0.2, fake_penalty=1.0, rationality=5.0, seed=None):
         super().__init__(seed=seed)
 
         self.n = n
@@ -16,6 +17,10 @@ class SocialNetwork(mesa.Model):
         self.m = m
         self.influencer_th = influencer_th
         self.truthfulness = truthfulness   # global P(message is true); fraction of true vs fake messages
+        self.verify_cost = verify_cost     # cost c to verify a message
+        self.fake_penalty = fake_penalty   # reputation (== wealth) loss for spreading fake news
+        self.rationality = rationality     # sharpness of the verify best-response
+        self.total_verification_cost_paid = 0.0   # model-level aggregate of verification effort
         self.network_type = network_type
 
         self.G = None
@@ -29,8 +34,6 @@ class SocialNetwork(mesa.Model):
             raise ValueError("Ease the influencer threshold or initialize more nodes\n")
         self.grid = NetworkGrid(self.G)
         self._init_agents()
-
-    
 
     def _check_for_influencers(self):
         top_fraction = 0.05
@@ -68,7 +71,7 @@ class SocialNetwork(mesa.Model):
                     return 1
 
                 tries += 1
-            return 0   
+            return 0
         else:
             raise ValueError("Unknown network type")
 
@@ -80,8 +83,7 @@ class SocialNetwork(mesa.Model):
                 agent = agents.Influencer(
                     self,
                     node,
-                    0.5,
-                    1,
+                    0,
                 )
                 self.influencers.append(agent)
 
@@ -89,8 +91,7 @@ class SocialNetwork(mesa.Model):
                 agent = agents.NormalUser(
                     self,
                     node,
-                    0.5,
-                    1,
+                    0,
                 )
 
             self.grid.place_agent(agent, node)
@@ -155,11 +156,11 @@ class SocialNetwork(mesa.Model):
     def _choose_initiator(self, seed_type):
         if seed_type == AgentType.Influencer and self.network_type == NetworkType.ScaleFree:
             return self.random.choice(self.influencers)
-        elif seed_type == AgentType.NormalUser:       
+        elif seed_type == AgentType.NormalUser:
             return self.random.choice(self.normal_users)
         else:
             raise ValueError("Unknown seed type")
-            
+
     def _reset_message_states(self):
         for agent in self.social_agents:
             agent.message_state = MessageState.Unaware
@@ -226,4 +227,3 @@ class SocialNetwork(mesa.Model):
             rewired_edges += 1
 
         return rewired_edges
-    
