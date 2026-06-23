@@ -32,15 +32,15 @@ class SocialAgent(mesa.Agent):
         #Payoffs
         self.detect_fake_reward=1.0
         self.receiver_true_reward=0.5
-        self.receiver_fake_penalty=-0.5
+        self.receiver_fake_penalty=0.8
         self.sender_true_reward=0.5
         self.sender_fake_reward=0.3
-        self.sender_fake_penalty=-1.0
+        self.sender_fake_penalty=1.2
 
     def receive_message(self, message, sender_id):
         # only the first exposure matters
         if self.message_state != MessageState.Unaware:
-            return 0
+            return (0, 0)
 
 
         sender_r_change = 0
@@ -62,7 +62,7 @@ class SocialAgent(mesa.Agent):
                 # Verify fake message:
                 # receiver is rewarded for detecting fake news, sender is punished
                 self.r += self.detect_fake_reward - self.model.verify_cost
-                sender_r_change = self.sender_fake_penalty
+                sender_r_change = -self.sender_fake_penalty
                 self.message_state = MessageState.Corrected
                 self._record_action(Action.Cooperate)       # caught it, did not spread fake
                 return (0, sender_r_change)
@@ -119,12 +119,3 @@ class SocialAgent(mesa.Agent):
     def observe_reputation(self, agent):
         noise = self.model.random.gauss(0, self.reputation_noise)
         return agent.r + noise
-
-class NormalUser(SocialAgent):
-    def __init__(self, model, node_id, r):
-        super().__init__(model, node_id, r, is_influencer=False)
-
-
-class Influencer(SocialAgent):
-    def __init__(self, model, node_id, r):
-        super().__init__(model, node_id, r, is_influencer=True)
