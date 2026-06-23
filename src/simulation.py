@@ -17,7 +17,9 @@ class Simulation:
             active_agents = self.social_network.simulation_step(max_steps=20)
 
             self.social_network.update_agents(active_agents)
-            rewired_edges = self.social_network.rewire_network(rewire_prob=0.1)
+            rewired_edges = self.social_network.rewire_network(rewire_prob=0.02)
+            if round_number % 10 == 0:
+                self.social_network.update_influencers()
 
             self.plotter.draw_network_graph(
                 title=f"Round {round_number + 1}, rewired edges: {rewired_edges}",
@@ -39,7 +41,7 @@ social_network = SocialNetwork(
 
 sim = Simulation(
     social_network=social_network,
-    rounds=50
+    rounds=1000
 )
 
 sim.run()

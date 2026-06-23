@@ -45,12 +45,39 @@ class SocialNetwork(mesa.Model):
 
         top_degree_nodes = sorted_degree_nodes[:number_of_influencers]
 
-        influencers = [
+        influencer_nodes = [
             node for node in top_degree_nodes
             if self.G.degree[node] >= self.influencer_th
         ]
 
-        return influencers
+        return influencer_nodes
+        
+    def update_influencers(self):
+        old_influencer_nodes = set(self.influencer_nodes)
+        updated_influencer_nodes = set(self._check_for_influencers())
+
+        removed_influencer_nodes = old_influencer_nodes - updated_influencer_nodes
+        new_influencer_nodes = updated_influencer_nodes - old_influencer_nodes
+
+        # Remove influencer status
+        for node_id in removed_influencer_nodes:
+            self.social_agents[node_id].is_influencer = False
+
+        # Add influencer status
+        for node_id in new_influencer_nodes:
+            self.social_agents[node_id].is_influencer = True
+
+        # Store all current influencer node IDs
+        self.influencer_nodes = list(updated_influencer_nodes)
+
+        # Store all current influencer agent objects
+        self.influencers = [
+            self.social_agents[node_id]
+            for node_id in self.influencer_nodes
+        ]
+        self.normal_users = list(set(self.social_agents).difference(self.influencers))
+
+                
 
     def _generate_network(self, network_type):
         if network_type == NetworkType.Random:
@@ -78,18 +105,20 @@ class SocialNetwork(mesa.Model):
             agent = None
 
             if node in self.influencer_nodes:
-                agent = agents.Influencer(
+                agent = agents.SocialAgent(
                     self,
-                    node,
-                    0,
+                    node_id=node,
+                    r=0,
+                    is_influencer=True
                 )
                 self.influencers.append(agent)
 
             else:
-                agent = agents.NormalUser(
+                agent = agents.SocialAgent(
                     self,
-                    node,
-                    0,
+                    node_id=node,
+                    r=0,
+                    is_influencer=False
                 )
 
             self.grid.place_agent(agent, node)
