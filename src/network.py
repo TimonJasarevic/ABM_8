@@ -4,8 +4,6 @@ import math
 from mesa.space import NetworkGrid
 from definitions import NetworkType, AgentType, MessageState
 import agents
-import matplotlib.pyplot as plt
-
 
 class SocialNetwork(mesa.Model):
     def __init__(self, network_type, n, p, m, influencer_th=10, truthfulness=0.5,
@@ -103,7 +101,7 @@ class SocialNetwork(mesa.Model):
         self._reset_message_states()
 
         # choose who starts the message
-        initiator_agent = self._choose_initiator(AgentType.Influencer)
+        initiator_agent = self._choose_initiator(AgentType.NormalUser)
 
         # initiator creates the message
         message = initiator_agent.initiate_message()
@@ -140,7 +138,7 @@ class SocialNetwork(mesa.Model):
                 agent_response = receiver_agent.receive_message(
                     message,
                     sender_agent.node_id,
-                    sender_agent.r
+                    receiver_agent.observe_reputation(sender_agent)
                 )
 
                 # assuming 1 means "shares further"
@@ -194,9 +192,10 @@ class SocialNetwork(mesa.Model):
                 neighbor_agent = self.social_agents[neighbor_id]
 
                 # Find worst current neighbor
-                if neighbor_agent.r < worst_neighbor_r:
+                neighbor_reputation = agent.observe_reputation(neighbor_agent)
+                if neighbor_reputation < worst_neighbor_r:
                     worst_neighbor_id = neighbor_id
-                    worst_neighbor_r = neighbor_agent.r
+                    worst_neighbor_r = neighbor_reputation
 
                 # Look at friends-of-friends as possible new neighbors
                 for candidate_id in self.G.neighbors(neighbor_id):
@@ -207,10 +206,10 @@ class SocialNetwork(mesa.Model):
                         continue
 
                     candidate_agent = self.social_agents[candidate_id]
-
-                    if candidate_agent.r > best_candidate_r:
+                    candidate_reputation = agent.observe_reputation(candidate_agent)
+                    if candidate_reputation > best_candidate_r:
                         best_candidate_id = candidate_id
-                        best_candidate_r = candidate_agent.r
+                        best_candidate_r = candidate_reputation
 
             # No possible friend-of-friend found
             if best_candidate_id is None:

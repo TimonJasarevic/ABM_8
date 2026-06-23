@@ -20,6 +20,7 @@ class SocialAgent(mesa.Agent):
         self.last_action = None
         self.n_cooperate = 0
         self.n_defect = 0
+        self.reputation_noise = 0.1
 
     def receive_message(self, message, agent_id, agent_r):
         # only the first exposure matters
@@ -84,6 +85,9 @@ class SocialAgent(mesa.Agent):
     def update(self):
         pass
 
+    def observe_reputation(self, agent):
+        noise = self.model.random.gauss(0, self.reputation_noise)
+        return agent.r + noise
 
 class NormalUser(SocialAgent):
     def __init__(self, model, node_id, r):
