@@ -57,7 +57,7 @@ class NetworkPlotter():
 
         if label_type == "reputation":
             labels = {
-                node: f"{self.social_network.social_agents[node].r:.2f}"
+                node: f"{self.social_network.social_agents[node].r:.0f}"
                 for node in self.G.nodes()
             }
 

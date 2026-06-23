@@ -7,7 +7,7 @@ import agents
 
 class SocialNetwork(mesa.Model):
     def __init__(self, network_type, n, p, m, influencer_th=10, truthfulness=0.5,
-                 verify_cost=0.2, fake_penalty=1.0, rationality=5.0, seed=None):
+                 verify_cost=0.25, fake_penalty=1.0, rationality=2.5, seed=None):
         super().__init__(seed=seed)
 
         self.n = n

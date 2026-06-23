@@ -34,14 +34,14 @@ social_network = SocialNetwork(
     n=200,
     p=4/59,
     m=4,
-    influencer_th=50,
+    influencer_th=40,
     truthfulness=0.5,
     seed=42
 )
 
 sim = Simulation(
     social_network=social_network,
-    rounds=1000
+    rounds=5000
 )
 
 sim.run()

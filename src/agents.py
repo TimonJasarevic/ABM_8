@@ -22,7 +22,7 @@ class SocialAgent(mesa.Agent):
 
         # Parameters
         self.perceived_truthfulness = 0.5   # running estimate of P(message is true)
-        self.reputation_noise = 0.1
+        self.reputation_noise = 1/10
 
         # Counters
         self.n_observations = 0             # verified messages seen (for the 1/k learning rate)
@@ -35,7 +35,7 @@ class SocialAgent(mesa.Agent):
         self.receiver_fake_penalty=0.8
         self.sender_true_reward=0.5
         self.sender_fake_reward=0.3
-        self.sender_fake_penalty=1.2
+        self.sender_fake_penalty=1.0
 
     def receive_message(self, message, sender_id):
         # only the first exposure matters
@@ -117,5 +117,6 @@ class SocialAgent(mesa.Agent):
         pass
 
     def observe_reputation(self, agent):
-        noise = self.model.random.gauss(0, self.reputation_noise)
+        sigma = max(0.1, abs(agent.r) * self.reputation_noise)
+        noise = self.model.random.gauss(0, sigma)
         return agent.r + noise
