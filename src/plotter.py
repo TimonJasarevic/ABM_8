@@ -86,7 +86,7 @@ class NetworkPlotter():
         self.network_ax.set_title(title)
         self.network_ax.axis("off")
 
-        plt.pause(0.01)
+        plt.pause(0.1)
 
     def show_network_graph(self):
         plt.show()

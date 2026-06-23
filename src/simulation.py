@@ -17,7 +17,7 @@ class Simulation:
             active_agents = self.social_network.simulation_step(max_steps=20)
 
             self.social_network.update_agents(active_agents)
-            rewired_edges = self.social_network.rewire_network(rewire_prob=0.02)
+            rewired_edges = self.social_network.rewire_network(rewire_prob=0.005)
             if round_number % 10 == 0:
                 self.social_network.update_influencers()
 
@@ -30,11 +30,11 @@ class Simulation:
 
 
 social_network = SocialNetwork(
-    network_type=NetworkType.ScaleFree,
-    n=60,
-    p=4,
+    network_type=NetworkType.Random,
+    n=200,
+    p=4/59,
     m=4,
-    influencer_th=10,
+    influencer_th=50,
     truthfulness=0.5,
     seed=42
 )
