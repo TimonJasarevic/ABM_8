@@ -135,12 +135,11 @@ class SocialNetwork(mesa.Model):
             # let exposed agents decide whether they share further
             for (sender_agent, receiver_agent) in exposed_agents:
 
-                agent_response = receiver_agent.receive_message(
+                (agent_response, sender_r_change) = receiver_agent.receive_message(
                     message,
-                    sender_agent.node_id,
-                    receiver_agent.observe_reputation(sender_agent)
+                    sender_agent.node_id
                 )
-
+                sender_agent.r += sender_r_change
                 # assuming 1 means "shares further"
                 if agent_response == 1:
                     new_sharers.append(receiver_agent)
