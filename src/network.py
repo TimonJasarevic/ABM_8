@@ -6,8 +6,8 @@ from definitions import NetworkType, AgentType, MessageState
 import agents
 
 class SocialNetwork(mesa.Model):
-    def __init__(self, network_type, n, p, m, influencer_th=10, truthfulness=0.5,
-                 verify_cost=0.25, fake_penalty=1.0, rationality=2.5, seed=None):
+    def __init__(self, network_type, n, p, m, influencer_th=40, truthfulness=0.5,
+                 verify_cost=0.25, rationality=1.5, seed=None):
         super().__init__(seed=seed)
 
         self.n = n
@@ -16,7 +16,6 @@ class SocialNetwork(mesa.Model):
         self.influencer_th = influencer_th
         self.truthfulness = truthfulness   # global P(message is true); fraction of true vs fake messages
         self.verify_cost = verify_cost     # cost c to verify a message
-        self.fake_penalty = fake_penalty   # reputation (== wealth) loss for spreading fake news
         self.rationality = rationality     # sharpness of the verify best-response
         self.total_verification_cost_paid = 0.0   # model-level aggregate of verification effort
         self.network_type = network_type
@@ -130,8 +129,7 @@ class SocialNetwork(mesa.Model):
         self._reset_message_states()
 
         # choose who starts the message
-        initiator_agent = self._choose_initiator(AgentType.NormalUser)
-
+        initiator_agent = self._choose_initiator(None)
         # initiator creates the message
         message = initiator_agent.initiate_message()
 
@@ -168,7 +166,7 @@ class SocialNetwork(mesa.Model):
                     message,
                     sender_agent.node_id
                 )
-                sender_agent.r += sender_r_change
+                sender_agent.update_reputation(sender_r_change)
                 # assuming 1 means "shares further"
                 if agent_response == 1:
                     new_sharers.append(receiver_agent)
@@ -180,12 +178,12 @@ class SocialNetwork(mesa.Model):
 
     #TODO: fix for no initiators
     def _choose_initiator(self, seed_type):
-        if seed_type == AgentType.Influencer and self.network_type == NetworkType.ScaleFree:
+        if seed_type == AgentType.Influencer and len(self.influencers) > 0:
             return self.random.choice(self.influencers)
         elif seed_type == AgentType.NormalUser:
             return self.random.choice(self.normal_users)
         else:
-            raise ValueError("Unknown seed type")
+            return self.random.choice(self.social_agents)
 
     def _reset_message_states(self):
         for agent in self.social_agents:
