@@ -238,16 +238,17 @@ class NetworkPlotter():
                 plt.show()
 
         return df, summary_df
-    
+
     def plot_degree_distribution_vs_barabasi(
-    self,
-    ba_m=None,
-    seed=42,
-    normalize=True,
-    log_y=False
+        self,
+        ba_m=None,
+        seed=42,
+        normalize=True,
+        log_y=False
     ):
         """
-        Compare the degree distribution of the current graph with a Barabasi-Albert graph.
+        Compare the degree distribution of the current graph with a
+        Barabasi-Albert graph.
 
         The Barabasi-Albert graph is generated with:
         - same number of nodes as the current graph
@@ -355,3 +356,111 @@ class NetworkPlotter():
             plt.yscale("log")
 
         plt.show()
+
+    def plot_degree_ccdf_vs_barabasi(self, ba_m=None, seed=42):
+        """
+        Plot the complementary cumulative degree distribution.
+
+        This is better than a normal histogram when the graph has hubs.
+        It shows P(degree >= k), making tail behavior easier to compare.
+        """
+
+        current_degrees = [degree for _, degree in self.G.degree()]
+        n = self.G.number_of_nodes()
+
+        if n == 0:
+            print("Graph has no nodes.")
+            return
+
+        current_avg_degree = sum(current_degrees) / n
+
+        if ba_m is None:
+            ba_m = round(current_avg_degree / 2)
+            ba_m = max(1, min(ba_m, n - 1))
+
+        ba_graph = nx.barabasi_albert_graph(
+            n=n,
+            m=ba_m,
+            seed=seed
+        )
+
+        ba_degrees = [degree for _, degree in ba_graph.degree()]
+
+        def ccdf_values(degrees):
+            max_degree = max(degrees)
+            x_values = []
+            y_values = []
+
+            for k in range(1, max_degree + 1):
+                fraction = sum(degree >= k for degree in degrees) / len(degrees)
+
+                if fraction > 0:
+                    x_values.append(k)
+                    y_values.append(fraction)
+
+            return x_values, y_values
+
+        current_x, current_y = ccdf_values(current_degrees)
+        ba_x, ba_y = ccdf_values(ba_degrees)
+
+        plt.figure(figsize=(8, 5))
+
+        plt.plot(
+            current_x,
+            current_y,
+            marker="o",
+            linestyle="none",
+            markersize=4,
+            label=(
+                f"Current graph "
+                f"(n={n}, avg degree={current_avg_degree:.2f}, "
+                f"max degree={max(current_degrees)})"
+            )
+        )
+
+        plt.plot(
+            ba_x,
+            ba_y,
+            marker="o",
+            linestyle="none",
+            markersize=4,
+            label=(
+                f"Barabasi-Albert "
+                f"(n={n}, m={ba_m}, avg degree={sum(ba_degrees) / n:.2f}, "
+                f"max degree={max(ba_degrees)})"
+            )
+        )
+
+        plt.xscale("log")
+        plt.yscale("log")
+        plt.xlabel("Degree k")
+        plt.ylabel("P(degree >= k)")
+        plt.title("Degree CCDF: current graph vs Barabasi-Albert graph")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    def print_network_degree_summary(self):
+        """
+        Print basic degree statistics for the current graph.
+        """
+
+        degrees = [degree for _, degree in self.G.degree()]
+        n = self.G.number_of_nodes()
+
+        if n == 0:
+            print("Graph has no nodes.")
+            return
+
+        degree_series = pd.Series(degrees)
+
+        print("\n=== Degree summary ===")
+        print(f"Number of nodes: {n}")
+        print(f"Number of edges: {self.G.number_of_edges()}")
+        print(f"Average degree: {degree_series.mean():.2f}")
+        print(f"Median degree: {degree_series.median():.2f}")
+        print(f"Max degree: {degree_series.max()}")
+        print(f"Min degree: {degree_series.min()}")
+        print(f"Isolated nodes: {(degree_series == 0).sum()}")
+        print(f"Degree std: {degree_series.std():.2f}")
+
