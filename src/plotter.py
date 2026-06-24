@@ -238,3 +238,120 @@ class NetworkPlotter():
                 plt.show()
 
         return df, summary_df
+    
+    def plot_degree_distribution_vs_barabasi(
+    self,
+    ba_m=None,
+    seed=42,
+    normalize=True,
+    log_y=False
+    ):
+        """
+        Compare the degree distribution of the current graph with a Barabasi-Albert graph.
+
+        The Barabasi-Albert graph is generated with:
+        - same number of nodes as the current graph
+        - approximately similar average degree
+
+        Parameters
+        ----------
+        ba_m : int or None
+            Number of edges each new node attaches with in the BA graph.
+            If None, it is chosen so that BA average degree is close to the
+            current graph's average degree.
+
+        seed : int
+            Random seed for the BA graph.
+
+        normalize : bool
+            If True, plot fractions of nodes.
+            If False, plot raw node counts.
+
+        log_y : bool
+            If True, use logarithmic y-axis.
+        """
+
+        from collections import Counter
+
+        current_degrees = [degree for _, degree in self.G.degree()]
+        n = self.G.number_of_nodes()
+
+        if n == 0:
+            print("Graph has no nodes.")
+            return
+
+        current_avg_degree = sum(current_degrees) / n
+
+        # In a Barabasi-Albert graph, average degree is approximately 2m.
+        # So choose m close to current_avg_degree / 2.
+        if ba_m is None:
+            ba_m = round(current_avg_degree / 2)
+            ba_m = max(1, min(ba_m, n - 1))
+
+        ba_graph = nx.barabasi_albert_graph(
+            n=n,
+            m=ba_m,
+            seed=seed
+        )
+
+        ba_degrees = [degree for _, degree in ba_graph.degree()]
+
+        current_counts = Counter(current_degrees)
+        ba_counts = Counter(ba_degrees)
+
+        max_degree = max(
+            max(current_degrees),
+            max(ba_degrees)
+        )
+
+        degrees = list(range(max_degree + 1))
+
+        current_values = [current_counts.get(degree, 0) for degree in degrees]
+        ba_values = [ba_counts.get(degree, 0) for degree in degrees]
+
+        if normalize:
+            current_values = [value / n for value in current_values]
+            ba_values = [value / n for value in ba_values]
+            y_label = "Fraction of nodes"
+        else:
+            y_label = "Number of nodes"
+
+        bar_width = 0.4
+
+        current_x = [degree - bar_width / 2 for degree in degrees]
+        ba_x = [degree + bar_width / 2 for degree in degrees]
+
+        plt.figure(figsize=(10, 5))
+
+        plt.bar(
+            current_x,
+            current_values,
+            width=bar_width,
+            alpha=0.7,
+            label=(
+                f"Current graph "
+                f"(n={n}, avg degree={current_avg_degree:.2f})"
+            )
+        )
+
+        plt.bar(
+            ba_x,
+            ba_values,
+            width=bar_width,
+            alpha=0.7,
+            label=(
+                f"Barabasi-Albert "
+                f"(n={n}, m={ba_m}, avg degree={sum(ba_degrees) / n:.2f})"
+            )
+        )
+
+        plt.xlabel("Degree")
+        plt.ylabel(y_label)
+        plt.title("Degree distribution: current graph vs Barabasi-Albert graph")
+        plt.legend()
+        plt.tight_layout()
+
+        if log_y:
+            plt.yscale("log")
+
+        plt.show()

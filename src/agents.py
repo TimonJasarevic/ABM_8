@@ -26,6 +26,19 @@ class SocialAgent(mesa.Agent):
         self.reputation_decay = 0.99
         self.risk_aversion = 0.25
 
+        # Sender-specific trust:
+        # Each receiver can trust specific neighbors differently.
+        self.trust = {}                     # sender_id -> trust level
+        self.default_trust = 0.5
+        self.trust_learning_rate = self.model.trust_learning_rate
+        self.trust_weight = self.model.trust_weight
+
+        # Adaptive fake-news tendency:
+        # If fake news gives a sender reputation, the sender becomes more likely
+        # to initiate fake news in future rounds.
+        self.fake_tendency = 1.0 - self.model.truthfulness
+        self.fake_learning_rate = self.model.fake_learning_rate
+
         # Counters
         self.n_observations = 0             # verified messages seen
         self.n_cooperate = 0
@@ -52,11 +65,13 @@ class SocialAgent(mesa.Agent):
 
         sender_r_change = 0
 
-        # decide to verify based on perceived truthfulness and the cost/penalty trade-off
-        if self.model.random.random() < self._verify_probability():
+        # decide to verify based on perceived truthfulness, trust in this sender,
+        # and the cost/penalty trade-off
+        if self.model.random.random() < self._verify_probability(sender_id):
             # pay the verification cost into reputation and the model aggregate
             self.model.total_verification_cost_paid += self.model.verify_cost
             self._update_perception(1.0 if message else 0.0)  # verification reveals the truth
+            self._update_trust(sender_id, 1.0 if message else 0.0)
 
             if message:
                 # Verify true message:
@@ -83,7 +98,7 @@ class SocialAgent(mesa.Agent):
             # Discard if sharing has negative expected value.
             # This models passive non-engagement: the agent does not pay verification cost,
             # does not learn the true state, does not punish the sender, and does not share.
-            expected_share_value = self._expected_share_value()
+            expected_share_value = self._expected_share_value(sender_id)
 
             if expected_share_value <= 0:
                 self.message_state = MessageState.Discarded
@@ -119,13 +134,77 @@ class SocialAgent(mesa.Agent):
         """
         self.r = self.reputation_decay * self.r + payoff_change
 
-    
-    def _expected_share_value(self):
+    def get_trust(self, sender_id):
+        """
+        Return the receiver's trust in a specific sender.
+
+        If the receiver has no previous verified history with this sender,
+        use default_trust.
+        """
+        return self.trust.get(sender_id, self.default_trust)
+
+    def _subjective_truthfulness(self, sender_id):
+        """
+        Combine general perceived_truthfulness with trust in this specific sender.
+
+        trust_weight = 0 means only general perceived_truthfulness matters.
+        trust_weight = 1 means only sender-specific trust matters.
+        """
+        sender_trust = self.get_trust(sender_id)
+
+        subjective_truthfulness = (
+            (1.0 - self.trust_weight) * self.perceived_truthfulness
+            + self.trust_weight * sender_trust
+        )
+
+        return min(1.0, max(0.0, subjective_truthfulness))
+
+    def _update_trust(self, sender_id, observation):
+        """
+        Update trust in this specific sender after verification.
+
+        observation = 1.0 means the sender sent true news.
+        observation = 0.0 means the sender sent fake news.
+        """
+        current_trust = self.get_trust(sender_id)
+
+        updated_trust = current_trust + self.trust_learning_rate * (
+            observation - current_trust
+        )
+
+        self.trust[sender_id] = min(1.0, max(0.0, updated_trust))
+
+    def adapt_fake_tendency(self, message, sender_r_change):
+        """
+        Sender-side adaptation.
+
+        If fake news gives positive reputation, the sender becomes more likely
+        to initiate fake news later. If fake news is punished, the sender becomes
+        less likely to initiate fake news.
+        """
+
+        # Only fake messages update fake_tendency.
+        if message:
+            return
+
+        if sender_r_change > 0:
+            self.fake_tendency += self.fake_learning_rate * (
+                1.0 - self.fake_tendency
+            )
+
+        elif sender_r_change < 0:
+            self.fake_tendency += self.fake_learning_rate * (
+                0.0 - self.fake_tendency
+            )
+
+        self.fake_tendency = min(1.0, max(0.0, self.fake_tendency))
+
+    def _expected_share_value(self, sender_id):
         """
         Risk-averse expected payoff from sharing without verification.
 
         The agent does not know whether the message is true or fake.
-        It uses perceived_truthfulness as its subjective probability.
+        It uses a combination of perceived_truthfulness and sender-specific trust.
 
         Risk aversion is modeled as:
 
@@ -134,7 +213,7 @@ class SocialAgent(mesa.Agent):
         So sharing becomes less attractive when the outcome is uncertain.
         """
 
-        p_true = self.perceived_truthfulness
+        p_true = self._subjective_truthfulness(sender_id)
 
         payoff_if_true = self.receiver_true_reward
         payoff_if_fake = -self.receiver_fake_penalty
@@ -156,10 +235,11 @@ class SocialAgent(mesa.Agent):
 
         return risk_adjusted_value
 
-    def _verify_probability(self):
-        # verify more when the world is perceived as less truthful and the fake-news penalty
+    def _verify_probability(self, sender_id):
+        # verify more when this sender is perceived as less truthful and the fake-news penalty
         # is large relative to the verification cost
-        expected_loss = (1.0 - self.perceived_truthfulness) * self.receiver_fake_penalty
+        subjective_truthfulness = self._subjective_truthfulness(sender_id)
+        expected_loss = (1.0 - subjective_truthfulness) * self.receiver_fake_penalty
 
         return 1.0 / (
             1.0 + math.exp(
@@ -185,8 +265,10 @@ class SocialAgent(mesa.Agent):
             self.n_discard += 1
 
     def initiate_message(self):
-        # message is true with probability truthfulness, fake otherwise
-        message = self.model.random.random() < self.model.truthfulness
+        # message is true with probability 1 - fake_tendency.
+        # fake_tendency adapts when fake news is rewarded or punished.
+        message_is_fake = self.model.random.random() < self.fake_tendency
+        message = not message_is_fake
 
         if message:
             self.message_state = MessageState.TrueBeliever

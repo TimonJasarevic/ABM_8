@@ -44,14 +44,15 @@ class Simulation:
 
         self.plotter.show_network_graph()
         self.plotter.analyze_history(history, rolling_window=50, plot=True)
+        self.plotter.plot_degree_distribution_vs_barabasi()
 
 
 social_network = SocialNetwork(
     network_type=NetworkType.Random,
-    n=200,
-    p=4/60,
+    n=300,
+    p=4/300,
     m=4,
-    influencer_th=40,
+    influencer_th=60,
     truthfulness=0.5,
     seed=42
 )

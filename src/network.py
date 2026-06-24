@@ -8,20 +8,28 @@ import agents
 class SocialNetwork(mesa.Model):
     def __init__(self, network_type, n, p, m, influencer_th=40, truthfulness=0.5,
                  verify_cost=0.25, rationality=2.5,
-                 max_candidates_considered=5, homophily_weight=1.0, seed=None):
+                 max_candidates_considered=5, homophily_weight=1.0, seed=None,
+                 trust_learning_rate=0.2, trust_weight=0.6,
+                 fake_learning_rate=0.05):
         super().__init__(seed=seed)
 
         self.n = n
         self.p = p
         self.m = m
         self.influencer_th = influencer_th
-        self.truthfulness = truthfulness   # global P(message is true); fraction of true vs fake messages
+        self.truthfulness = truthfulness   # initial global P(message is true)
         self.verify_cost = verify_cost     # cost c to verify a message
         self.rationality = rationality     # sharpness of the verify best-response
         self.max_candidates_considered = max_candidates_considered  # limited attention in rewiring
         self.homophily_weight = homophily_weight  # strength of belief-similarity preference
         self.total_verification_cost_paid = 0.0   # model-level aggregate of verification effort
         self.network_type = network_type
+
+        # Added mechanism:
+        # receivers trust specific senders, and senders adapt fake-news tendency.
+        self.trust_learning_rate = trust_learning_rate
+        self.trust_weight = trust_weight
+        self.fake_learning_rate = fake_learning_rate
 
         self.G = None
         self.grid = None
@@ -53,7 +61,7 @@ class SocialNetwork(mesa.Model):
         ]
 
         return influencer_nodes
-        
+
     def update_influencers(self):
         old_influencer_nodes = set(self.influencer_nodes)
         updated_influencer_nodes = set(self._check_for_influencers())
@@ -79,7 +87,7 @@ class SocialNetwork(mesa.Model):
         ]
         self.normal_users = list(set(self.social_agents).difference(self.influencers))
 
-                
+
 
     def _generate_network(self, network_type):
         if network_type == NetworkType.Random:
@@ -170,6 +178,10 @@ class SocialNetwork(mesa.Model):
                     sender_agent.node_id
                 )
                 sender_agent.r += sender_r_change
+
+                # Sender notices whether fake news paid off or was punished.
+                sender_agent.adapt_fake_tendency(message, sender_r_change)
+
                 # assuming 1 means "shares further"
                 if agent_response == 1:
                     new_sharers.append(receiver_agent)
@@ -291,4 +303,3 @@ class SocialNetwork(mesa.Model):
             rewired_edges += 1
 
         return rewired_edges
-
