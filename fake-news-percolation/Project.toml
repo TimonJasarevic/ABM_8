@@ -1,0 +1,7 @@
+[deps]
+Arrow = "69666777-d1a9-59fb-9406-91d4454c9d45"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"

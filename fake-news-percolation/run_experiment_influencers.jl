@@ -25,6 +25,7 @@ Base.@kwdef struct SimConfig
     prior_max::Float64 = 0.7
     prior_strength::Float64 = 2.0
     rationality::Float64 = 1.0   # softmax (logit) precision λ; λ→∞ ⇒ argmax, λ→0 ⇒ random
+    loss_aversion::Float64 = 1.0  
 end
 
 mutable struct BetaDist
@@ -45,11 +46,14 @@ module AgentLogic
     end
     function decide(p_true::Float64, reach::Int, est_tpr::Float64, est_fpr::Float64, cfg::SimConfig, rng)
         k = Float64(reach)
+        subjective_loss = cfg.loss_aversion * cfg.rep_loss
+
         u_share_if_true = cfg.rep_gain * k
-        u_share_if_fake = -cfg.rep_loss * k
+        u_share_if_fake = -subjective_loss * k
         u_share = (p_true * u_share_if_true) + ((1.0 - p_true) * u_share_if_fake)
+
         eu_given_real = (1.0 - est_fpr) * (cfg.rep_gain * k)
-        eu_given_fake = (1.0 - est_tpr) * (-cfg.rep_loss * k)
+        eu_given_fake = (1.0 - est_tpr) * (-subjective_loss * k)
         u_verify = -cfg.verification_cost + (p_true * eu_given_real) + ((1.0 - p_true) * eu_given_fake)
         # bounded rationality: softmax (logit quantal response) over the three action utilities
         # (DISCARD utility = 0). λ→∞ recovers the old argmax; λ→0 → uniform random choice.
@@ -401,6 +405,7 @@ function run_lhs_sweep()
         (0.01, 0.40), # 4: verification_fpr
         (0.05, 0.95), # 5: global_fake_prob
         (0.10, 1.90), # 6: rationality (λ; softmax precision, centred on 1.0)
+        (1.00, 3.00), # 7: loss_aversion
     ]
 
     NUM_LHS_POINTS = 1000
@@ -454,6 +459,7 @@ function run_lhs_sweep()
         tpr, fpr   = lhs_points[lhs_id, 3], lhs_points[lhs_id, 4]
         prev       = lhs_points[lhs_id, 5]
         rat        = lhs_points[lhs_id, 6]
+        loss_av    = lhs_points[lhs_id, 7]
 
         thread_seed = Int(mod(hash((lhs_id, rep_id, RNG_NUMBER)), typemax(Int)))     
 
@@ -468,6 +474,7 @@ function run_lhs_sweep()
             verification_tpr=tpr,
             verification_fpr=fpr,
             rationality=rat,
+            loss_aversion=loss_av,
             random_seed=thread_seed
         )
         
@@ -522,6 +529,7 @@ function run_lhs_sweep()
             fpr = fpr,
             p_fake = prev,
             rationality = rat,
+            loss_aversion = loss_av,
             avg_payoff = mean(point_utilities),
             avg_fake_cascade = avg_fake_cascade,
             avg_true_cascade = avg_true_cascade,
