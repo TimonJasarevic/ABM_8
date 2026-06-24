@@ -136,6 +136,11 @@ class NetworkPlotter():
             summary["max_corrected"] = df["corrected"].max()
             summary["final_corrected"] = df["corrected"].iloc[-1]
 
+        if "discarded" in df.columns:
+            summary["mean_discarded"] = df["discarded"].mean()
+            summary["max_discarded"] = df["discarded"].max()
+            summary["final_discarded"] = df["discarded"].iloc[-1]
+
         if "mean_reputation" in df.columns:
             summary["mean_reputation_over_time"] = df["mean_reputation"].mean()
             summary["final_mean_reputation"] = df["mean_reputation"].iloc[-1]
@@ -176,8 +181,8 @@ class NetworkPlotter():
                 plt.tight_layout()
                 plt.show()
 
-            # 2. Fake believers and corrected agents
-            if "fake_believers" in df.columns or "corrected" in df.columns:
+            # 2. Fake believers, corrected agents, and discarded messages
+            if "fake_believers" in df.columns or "corrected" in df.columns or "discarded" in df.columns:
                 plt.figure(figsize=(8, 4))
 
                 if "fake_believers" in df.columns:
@@ -186,9 +191,12 @@ class NetworkPlotter():
                 if "corrected" in df.columns:
                     plt.plot(x, df["corrected_rolling"], label="Corrected")
 
+                if "discarded" in df.columns:
+                    plt.plot(x, df["discarded_rolling"], label="Discarded")
+
                 plt.xlabel("Round")
                 plt.ylabel("Number of agents")
-                plt.title("Fake believers and corrected agents")
+                plt.title("Fake believers, corrected agents, and discarded messages")
                 plt.legend()
                 plt.tight_layout()
                 plt.show()

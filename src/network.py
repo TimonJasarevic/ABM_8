@@ -7,7 +7,8 @@ import agents
 
 class SocialNetwork(mesa.Model):
     def __init__(self, network_type, n, p, m, influencer_th=40, truthfulness=0.5,
-                 verify_cost=0.25, rationality=1.5, seed=None):
+                 verify_cost=0.25, rationality=2.5,
+                 max_candidates_considered=5, homophily_weight=1.0, seed=None):
         super().__init__(seed=seed)
 
         self.n = n
@@ -17,6 +18,8 @@ class SocialNetwork(mesa.Model):
         self.truthfulness = truthfulness   # global P(message is true); fraction of true vs fake messages
         self.verify_cost = verify_cost     # cost c to verify a message
         self.rationality = rationality     # sharpness of the verify best-response
+        self.max_candidates_considered = max_candidates_considered  # limited attention in rewiring
+        self.homophily_weight = homophily_weight  # strength of belief-similarity preference
         self.total_verification_cost_paid = 0.0   # model-level aggregate of verification effort
         self.network_type = network_type
 
@@ -166,7 +169,7 @@ class SocialNetwork(mesa.Model):
                     message,
                     sender_agent.node_id
                 )
-                sender_agent.update_reputation(sender_r_change)
+                sender_agent.r += sender_r_change
                 # assuming 1 means "shares further"
                 if agent_response == 1:
                     new_sharers.append(receiver_agent)
@@ -193,6 +196,21 @@ class SocialNetwork(mesa.Model):
         for agent in agent_set:
             agent.update()
 
+    def _connection_score(self, observer_agent, target_agent):
+        """
+        Score used for rewiring.
+
+        Agents prefer targets with high observed reputation and similar beliefs
+        about the truthfulness of the information environment.
+        """
+        observed_reputation = observer_agent.observe_reputation(target_agent)
+        belief_distance = abs(
+            observer_agent.perceived_truthfulness
+            - target_agent.perceived_truthfulness
+        )
+
+        return observed_reputation - self.homophily_weight * belief_distance
+
     def rewire_network(self, rewire_prob):
         rewired_edges = 0
 
@@ -209,21 +227,21 @@ class SocialNetwork(mesa.Model):
             current_neighbor_set = set(current_neighbor_ids)
 
             worst_neighbor_id = None
-            worst_neighbor_r = math.inf
+            worst_neighbor_score = math.inf
 
-            best_candidate_id = None
-            best_candidate_r = -math.inf
+            possible_candidate_ids = set()
 
             for neighbor_id in current_neighbor_ids:
                 neighbor_agent = self.social_agents[neighbor_id]
 
-                # Find worst current neighbor
-                neighbor_reputation = agent.observe_reputation(neighbor_agent)
-                if neighbor_reputation < worst_neighbor_r:
+                # Find the least attractive current neighbor.
+                # This now uses both reputation and belief similarity.
+                neighbor_score = self._connection_score(agent, neighbor_agent)
+                if neighbor_score < worst_neighbor_score:
                     worst_neighbor_id = neighbor_id
-                    worst_neighbor_r = neighbor_reputation
+                    worst_neighbor_score = neighbor_score
 
-                # Look at friends-of-friends as possible new neighbors
+                # Collect friends-of-friends as possible new neighbors.
                 for candidate_id in self.G.neighbors(neighbor_id):
                     if candidate_id == agent_id:
                         continue
@@ -231,24 +249,46 @@ class SocialNetwork(mesa.Model):
                     if candidate_id in current_neighbor_set:
                         continue
 
-                    candidate_agent = self.social_agents[candidate_id]
-                    candidate_reputation = agent.observe_reputation(candidate_agent)
-                    if candidate_reputation > best_candidate_r:
-                        best_candidate_id = candidate_id
-                        best_candidate_r = candidate_reputation
+                    possible_candidate_ids.add(candidate_id)
 
-            # No possible friend-of-friend found
+            if len(possible_candidate_ids) == 0:
+                continue
+
+            # Limited attention: the agent does not evaluate all possible candidates.
+            possible_candidate_ids = list(possible_candidate_ids)
+            sample_size = min(
+                self.max_candidates_considered,
+                len(possible_candidate_ids)
+            )
+            noticed_candidate_ids = self.random.sample(
+                possible_candidate_ids,
+                sample_size
+            )
+
+            best_candidate_id = None
+            best_candidate_score = -math.inf
+
+            for candidate_id in noticed_candidate_ids:
+                candidate_agent = self.social_agents[candidate_id]
+                candidate_score = self._connection_score(agent, candidate_agent)
+
+                if candidate_score > best_candidate_score:
+                    best_candidate_id = candidate_id
+                    best_candidate_score = candidate_score
+
+            # No useful candidate found.
             if best_candidate_id is None:
                 continue
 
-            # Only rewire if the candidate is actually better
-            if best_candidate_r <= worst_neighbor_r:
+            # Only rewire if the noticed candidate is actually better.
+            if best_candidate_score <= worst_neighbor_score:
                 continue
 
-            # Replace worst neighbor with best local candidate
+            # Replace worst neighbor with best noticed candidate.
             self.G.remove_edge(agent_id, worst_neighbor_id)
             self.G.add_edge(agent_id, best_candidate_id)
 
             rewired_edges += 1
 
         return rewired_edges
+

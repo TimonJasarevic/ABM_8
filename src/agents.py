@@ -23,20 +23,27 @@ class SocialAgent(mesa.Agent):
         # Parameters
         self.perceived_truthfulness = 0.5   # running estimate of P(message is true)
         self.reputation_noise = 1 / 10
-        self.reputation_decay = 0.9999
+        self.reputation_decay = 0.99
+        self.risk_aversion = 0.25
 
         # Counters
         self.n_observations = 0             # verified messages seen
         self.n_cooperate = 0
         self.n_defect = 0
+        self.n_discard = 0
 
         # Payoffs
-        self.detect_fake_reward = 1.0
-        self.receiver_true_reward = 0.5
-        self.receiver_fake_penalty = 0.8
-        self.sender_true_reward = 0.5
-        self.sender_fake_reward = 0.3
-        self.sender_fake_penalty = 1.0
+        self.rep_gain = 0.5
+        self.rep_loss = 1.0
+
+        self.receiver_true_reward = self.rep_gain
+        self.receiver_fake_penalty = self.rep_loss
+
+        self.sender_true_reward = self.rep_gain
+        self.sender_fake_reward = 0.2
+        self.sender_fake_penalty = self.rep_loss
+
+        self.detect_fake_reward = 0.5
 
     def receive_message(self, message, sender_id):
         # only the first exposure matters
@@ -73,6 +80,16 @@ class SocialAgent(mesa.Agent):
 
         # did not verify
         else:
+            # Discard if sharing has negative expected value.
+            # This models passive non-engagement: the agent does not pay verification cost,
+            # does not learn the true state, does not punish the sender, and does not share.
+            expected_share_value = self._expected_share_value()
+
+            if expected_share_value <= 0:
+                self.message_state = MessageState.Discarded
+                self._record_action(Action.Discard)
+                return (0, 0)
+
             if message:
                 # Share true message:
                 # receiver and sender both gain reputation
@@ -102,6 +119,43 @@ class SocialAgent(mesa.Agent):
         """
         self.r = self.reputation_decay * self.r + payoff_change
 
+    
+    def _expected_share_value(self):
+        """
+        Risk-averse expected payoff from sharing without verification.
+
+        The agent does not know whether the message is true or fake.
+        It uses perceived_truthfulness as its subjective probability.
+
+        Risk aversion is modeled as:
+
+            risk_adjusted_value = expected_payoff - risk_aversion * variance
+
+        So sharing becomes less attractive when the outcome is uncertain.
+        """
+
+        p_true = self.perceived_truthfulness
+
+        payoff_if_true = self.receiver_true_reward
+        payoff_if_fake = -self.receiver_fake_penalty
+
+        expected_payoff = (
+            p_true * payoff_if_true
+            + (1.0 - p_true) * payoff_if_fake
+        )
+
+        payoff_variance = (
+            p_true * (payoff_if_true - expected_payoff) ** 2
+            + (1.0 - p_true) * (payoff_if_fake - expected_payoff) ** 2
+        )
+
+        risk_adjusted_value = (
+            expected_payoff
+            - self.risk_aversion * payoff_variance
+        )
+
+        return risk_adjusted_value
+
     def _verify_probability(self):
         # verify more when the world is perceived as less truthful and the fake-news penalty
         # is large relative to the verification cost
@@ -125,8 +179,10 @@ class SocialAgent(mesa.Agent):
 
         if action == Action.Cooperate:
             self.n_cooperate += 1
-        else:
+        elif action == Action.Defect:
             self.n_defect += 1
+        elif action == Action.Discard:
+            self.n_discard += 1
 
     def initiate_message(self):
         # message is true with probability truthfulness, fake otherwise

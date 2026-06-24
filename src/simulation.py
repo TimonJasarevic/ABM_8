@@ -28,6 +28,7 @@ class Simulation:
                 )
             fake_believers = sum(a.message_state.name == "FalseBeliever" for a in self.social_network.social_agents)
             corrected = sum(a.message_state.name == "Corrected" for a in self.social_network.social_agents)
+            discarded = sum(a.message_state.name == "Discarded" for a in self.social_network.social_agents)
             mean_r = sum(a.r for a in self.social_network.social_agents) / len(self.social_network.social_agents)
 
             history.append({
@@ -35,6 +36,7 @@ class Simulation:
                 "cascade_size": len(active_agents),
                 "fake_believers": fake_believers,
                 "corrected": corrected,
+                "discarded": discarded,
                 "mean_reputation": mean_r,
                 "rewired_edges": rewired_edges,
                 "n_influencers": len(self.social_network.influencers),
@@ -46,10 +48,10 @@ class Simulation:
 
 social_network = SocialNetwork(
     network_type=NetworkType.Random,
-    n=300,
+    n=200,
     p=4/60,
     m=4,
-    influencer_th=60,
+    influencer_th=40,
     truthfulness=0.5,
     seed=42
 )
