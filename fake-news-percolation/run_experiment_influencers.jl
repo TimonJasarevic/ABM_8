@@ -24,6 +24,7 @@ Base.@kwdef struct SimConfig
     prior_min::Float64 = 0.3
     prior_max::Float64 = 0.7
     prior_strength::Float64 = 2.0
+    rationality::Float64 = 1.0   # softmax (logit) precision λ; λ→∞ ⇒ argmax, λ→0 ⇒ random
 end
 
 mutable struct BetaDist
@@ -42,7 +43,7 @@ module AgentLogic
         denominator = (trust * global_true_belief) + ((1.0 - trust) * p_false_global)
         return denominator == 0.0 ? 0.0 : numerator / denominator
     end
-    function decide(p_true::Float64, reach::Int, est_tpr::Float64, est_fpr::Float64, cfg::SimConfig)
+    function decide(p_true::Float64, reach::Int, est_tpr::Float64, est_fpr::Float64, cfg::SimConfig, rng)
         k = Float64(reach)
         u_share_if_true = cfg.rep_gain * k
         u_share_if_fake = -cfg.rep_loss * k
@@ -50,11 +51,15 @@ module AgentLogic
         eu_given_real = (1.0 - est_fpr) * (cfg.rep_gain * k)
         eu_given_fake = (1.0 - est_tpr) * (-cfg.rep_loss * k)
         u_verify = -cfg.verification_cost + (p_true * eu_given_real) + ((1.0 - p_true) * eu_given_fake)
-        if u_share > 0.0
-            return u_share > u_verify ? :SHARE : :VERIFY
-        else
-            return 0.0 >= u_verify ? :DISCARD : :VERIFY
-        end
+        # bounded rationality: softmax (logit quantal response) over the three action utilities
+        # (DISCARD utility = 0). λ→∞ recovers the old argmax; λ→0 → uniform random choice.
+        λ = cfg.rationality
+        u_max = max(u_share, u_verify, 0.0)
+        w_share   = exp(λ * (u_share  - u_max))
+        w_verify  = exp(λ * (u_verify - u_max))
+        w_discard = exp(λ * (0.0      - u_max))
+        t = rand(rng) * (w_share + w_verify + w_discard)
+        return t < w_share ? :SHARE : (t < w_share + w_verify ? :VERIFY : :DISCARD)
     end
 end
 
@@ -288,7 +293,7 @@ function run_single_cascade!(sim::Simulation, after_burn_in::Bool)
         end
         
         # choose action
-        action = AgentLogic.decide(p_true, reach, est_tpr, est_fpr, sim.cfg)
+        action = AgentLogic.decide(p_true, reach, est_tpr, est_fpr, sim.cfg, sim.rng)
         
         if action != :DISCARD
             is_verifying = (action == :VERIFY)
@@ -395,6 +400,7 @@ function run_lhs_sweep()
         (0.60, 0.99), # 3: verification_tpr
         (0.01, 0.40), # 4: verification_fpr
         (0.05, 0.95), # 5: global_fake_prob
+        (0.10, 1.90), # 6: rationality (λ; softmax precision, centred on 1.0)
     ]
 
     NUM_LHS_POINTS = 1000
@@ -447,7 +453,8 @@ function run_lhs_sweep()
         cost, loss = lhs_points[lhs_id, 1], lhs_points[lhs_id, 2]
         tpr, fpr   = lhs_points[lhs_id, 3], lhs_points[lhs_id, 4]
         prev       = lhs_points[lhs_id, 5]
-        
+        rat        = lhs_points[lhs_id, 6]
+
         thread_seed = Int(mod(hash((lhs_id, rep_id, RNG_NUMBER)), typemax(Int)))     
 
         cfg = SimConfig(
@@ -460,6 +467,7 @@ function run_lhs_sweep()
             rep_loss=loss,
             verification_tpr=tpr,
             verification_fpr=fpr,
+            rationality=rat,
             random_seed=thread_seed
         )
         
@@ -511,8 +519,9 @@ function run_lhs_sweep()
             v_cost = cost,
             loss = loss,
             tpr = tpr,
-            fpr = fpr, 
+            fpr = fpr,
             p_fake = prev,
+            rationality = rat,
             avg_payoff = mean(point_utilities),
             avg_fake_cascade = avg_fake_cascade,
             avg_true_cascade = avg_true_cascade,
