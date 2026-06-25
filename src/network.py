@@ -19,7 +19,7 @@ class SocialNetwork(mesa.Model):
         self.truthfulness = truthfulness   # initial global P(message is true)
         self.verify_cost = verify_cost     # cost c to verify a message
         self.rationality = rationality     # sharpness of the verify best-response
-        self.max_candidates_considered = math.ceil(p/2)  # limited attention in rewiring
+        self.max_candidates_considered = 2  # limited attention in rewiring
         self.homophily_weight = homophily_weight  # strength of belief-similarity preference
         self.total_verification_cost_paid = 0.0   # model-level aggregate of verification effort
         self.network_type = network_type
