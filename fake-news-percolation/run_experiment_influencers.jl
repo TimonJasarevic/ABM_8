@@ -622,5 +622,5 @@ end
 
 
 if !@isdefined(_INCLUDED_AS_MODULE)
-    run_sobol_sweep()
+    run_sobol_sweep(; write_full = get(ENV, "WRITE_FULL", "false") == "true")
 end
