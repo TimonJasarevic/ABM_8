@@ -3,7 +3,8 @@ from enum import Enum
 class NetworkType(Enum):
     ScaleFree = 1
     Random = 2
-
+    Regular = 3
+    
 class MessageState(Enum):
     Unaware = 1        # has not seen the message
     FalseBeliever = 2  # believes a false message

@@ -7,10 +7,9 @@ import agents
 
 class SocialNetwork(mesa.Model):
     def __init__(self, network_type, n, p, m, influencer_th=40, truthfulness=0.5,
-                 verify_cost=0.25, rationality=2.5,
-                 max_candidates_considered=5, homophily_weight=1.0, seed=None,
+                 verify_cost=0.25, rationality=2.5, homophily_weight=2.0, seed=None,
                  trust_learning_rate=0.2, trust_weight=0.6,
-                 fake_learning_rate=0.05):
+                 fake_learning_rate=0.05, risk_aversion=0.25):
         super().__init__(seed=seed)
 
         self.n = n
@@ -20,7 +19,7 @@ class SocialNetwork(mesa.Model):
         self.truthfulness = truthfulness   # initial global P(message is true)
         self.verify_cost = verify_cost     # cost c to verify a message
         self.rationality = rationality     # sharpness of the verify best-response
-        self.max_candidates_considered = max_candidates_considered  # limited attention in rewiring
+        self.max_candidates_considered = math.ceil(p/2)  # limited attention in rewiring
         self.homophily_weight = homophily_weight  # strength of belief-similarity preference
         self.total_verification_cost_paid = 0.0   # model-level aggregate of verification effort
         self.network_type = network_type
@@ -30,6 +29,11 @@ class SocialNetwork(mesa.Model):
         self.trust_learning_rate = trust_learning_rate
         self.trust_weight = trust_weight
         self.fake_learning_rate = fake_learning_rate
+        self.risk_aversion = risk_aversion
+
+        # These are updated every cascade and used for output metrics.
+        self.last_message = None
+        self.last_initiator_id = None
 
         self.G = None
         self.grid = None
@@ -40,6 +44,16 @@ class SocialNetwork(mesa.Model):
         self.normal_users = []
         if not self._generate_network(network_type):
             raise ValueError("Ease the influencer threshold or initialize more nodes\n")
+
+        # Store initial network structure before any rewiring.
+        # This allows checking whether initial high-degree nodes become influencers later.
+        self.initial_degrees = dict(self.G.degree())
+        self.initial_degree_ranking = sorted(
+            self.initial_degrees,
+            key=self.initial_degrees.get,
+            reverse=True
+        )
+
         self.grid = NetworkGrid(self.G)
         self._init_agents()
 
@@ -107,6 +121,21 @@ class SocialNetwork(mesa.Model):
 
                 tries += 1
             return 0
+        elif network_type == NetworkType.Regular:
+            degree = self.m
+
+            if degree >= self.n:
+                raise ValueError("Regular graph degree must be smaller than n")
+
+            if (degree * self.n) % 2 != 0:
+                raise ValueError("For a regular graph, degree * n must be even")
+
+            self.G = nx.random_regular_graph(
+                d=degree,
+                n=self.n
+            )
+            return 1
+
         else:
             raise ValueError("Unknown network type")
 
@@ -143,6 +172,10 @@ class SocialNetwork(mesa.Model):
         initiator_agent = self._choose_initiator(None)
         # initiator creates the message
         message = initiator_agent.initiate_message()
+
+        # Store cascade-level information for output metrics.
+        self.last_message = message
+        self.last_initiator_id = initiator_agent.node_id
 
         active_agents = {initiator_agent}
 
@@ -204,8 +237,8 @@ class SocialNetwork(mesa.Model):
         for agent in self.social_agents:
             agent.message_state = MessageState.Unaware
 
-    def update_agents(self, agent_set):
-        for agent in agent_set:
+    def update_agents(self):
+        for agent in self.social_agents:
             agent.update()
 
     def _connection_score(self, observer_agent, target_agent):

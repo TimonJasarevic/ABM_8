@@ -119,6 +119,27 @@ class NetworkPlotter():
                     min_periods=1
                 ).mean()
 
+        # Conditional cascade-size series.
+        # These show whether fake-message cascades are larger than true-message cascades.
+        if "message_is_fake" in df.columns and "cascade_size" in df.columns:
+            df["fake_message_cascade_size"] = df["cascade_size"].where(
+                df["message_is_fake"] == True
+            )
+            df["true_message_cascade_size"] = df["cascade_size"].where(
+                df["message_is_true"] == True
+            )
+
+            df["fake_message_cascade_size_rolling"] = (
+                df["fake_message_cascade_size"]
+                .rolling(window=rolling_window, min_periods=1)
+                .mean()
+            )
+            df["true_message_cascade_size_rolling"] = (
+                df["true_message_cascade_size"]
+                .rolling(window=rolling_window, min_periods=1)
+                .mean()
+            )
+
         summary = {}
 
         if "cascade_size" in df.columns:
@@ -153,6 +174,38 @@ class NetworkPlotter():
             summary["mean_n_influencers"] = df["n_influencers"].mean()
             summary["final_n_influencers"] = df["n_influencers"].iloc[-1]
 
+        key_metrics = [
+            "fake_share_of_spread",
+            "fake_to_true_ratio",
+            "correction_rate",
+            "discard_rate",
+            "verifications_this_round",
+            "mean_fake_tendency",
+            "mean_trust",
+            "max_degree_ratio",
+            "max_degree",
+            "degree_std"
+        ]
+
+        for metric in key_metrics:
+            if metric in df.columns:
+                summary[f"mean_{metric}"] = df[metric].mean()
+                summary[f"final_{metric}"] = df[metric].iloc[-1]
+
+        if (
+            "fake_message_cascade_size" in df.columns
+            and "true_message_cascade_size" in df.columns
+        ):
+            mean_fake_cascade = df["fake_message_cascade_size"].mean()
+            mean_true_cascade = df["true_message_cascade_size"].mean()
+
+            summary["mean_fake_message_cascade_size"] = mean_fake_cascade
+            summary["mean_true_message_cascade_size"] = mean_true_cascade
+            summary["fake_to_true_cascade_ratio"] = (
+                mean_fake_cascade / mean_true_cascade
+                if mean_true_cascade > 0 else float("nan")
+            )
+
         summary_df = pd.DataFrame.from_dict(
             summary,
             orient="index",
@@ -169,10 +222,98 @@ class NetworkPlotter():
         if plot:
             x = df["round"] if "round" in df.columns else df.index
 
+            # Combined overview figure.
+            # This keeps the separate plots below, but also puts the most
+            # important time series in one shared x-axis figure.
+            overview_panels = []
+
+            misinformation_cols = [
+                ("fake_believers", "Fake believers"),
+                ("corrected", "Corrected"),
+                ("discarded", "Discarded")
+            ]
+
+            available_misinformation_cols = [
+                (col, label)
+                for col, label in misinformation_cols
+                if f"{col}_rolling" in df.columns
+            ]
+
+            if len(available_misinformation_cols) > 0:
+                overview_panels.append("misinformation_states")
+
+            if "mean_reputation_rolling" in df.columns:
+                overview_panels.append("mean_reputation")
+
+            if "n_influencers_rolling" in df.columns:
+                overview_panels.append("n_influencers")
+
+            if len(overview_panels) > 0:
+                fig, axes = plt.subplots(
+                    nrows=len(overview_panels),
+                    ncols=1,
+                    figsize=(10, 3.2 * len(overview_panels)),
+                    sharex=True
+                )
+
+                if len(overview_panels) == 1:
+                    axes = [axes]
+
+                for ax, panel in zip(axes, overview_panels):
+                    if panel == "misinformation_states":
+                        for col, label in available_misinformation_cols:
+                            ax.plot(
+                                x,
+                                df[f"{col}_rolling"],
+                                label=label
+                            )
+
+                        ax.set_ylabel("Number of agents")
+                        ax.set_title(
+                            "Fake believers, corrected agents, and discarded messages"
+                        )
+                        ax.legend()
+
+                    elif panel == "mean_reputation":
+                        ax.plot(
+                            x,
+                            df["mean_reputation"],
+                            alpha=0.35,
+                            label="Raw"
+                        )
+                        ax.plot(
+                            x,
+                            df["mean_reputation_rolling"],
+                            label=f"Rolling mean ({rolling_window})"
+                        )
+                        ax.set_ylabel("Mean reputation")
+                        ax.set_title("Mean reputation over time")
+                        ax.legend()
+
+                    elif panel == "n_influencers":
+                        ax.plot(
+                            x,
+                            df["n_influencers"],
+                            alpha=0.35,
+                            label="Raw"
+                        )
+                        ax.plot(
+                            x,
+                            df["n_influencers_rolling"],
+                            label=f"Rolling mean ({rolling_window})"
+                        )
+                        ax.set_ylabel("Number of influencers")
+                        ax.set_title("Influencer count over time")
+                        ax.legend()
+
+                axes[-1].set_xlabel("Round")
+                fig.suptitle("Simulation overview over time", y=1.02)
+                fig.tight_layout()
+                plt.show()
+
             # 1. Cascade size
             if "cascade_size" in df.columns:
                 plt.figure(figsize=(8, 4))
-                plt.plot(x, df["cascade_size"], alpha=0.35, label="Raw")
                 plt.plot(x, df["cascade_size_rolling"], label=f"Rolling mean ({rolling_window})")
                 plt.xlabel("Round")
                 plt.ylabel("Cascade size")
@@ -181,34 +322,78 @@ class NetworkPlotter():
                 plt.tight_layout()
                 plt.show()
 
-            # 2. Fake believers, corrected agents, and discarded messages
-            if "fake_believers" in df.columns or "corrected" in df.columns or "discarded" in df.columns:
+
+            # 2d. Cascade size for fake versus true messages
+            if (
+                "fake_message_cascade_size_rolling" in df.columns
+                and "true_message_cascade_size_rolling" in df.columns
+            ):
                 plt.figure(figsize=(8, 4))
-
-                if "fake_believers" in df.columns:
-                    plt.plot(x, df["fake_believers_rolling"], label="Fake believers")
-
-                if "corrected" in df.columns:
-                    plt.plot(x, df["corrected_rolling"], label="Corrected")
-
-                if "discarded" in df.columns:
-                    plt.plot(x, df["discarded_rolling"], label="Discarded")
-
+                plt.plot(
+                    x,
+                    df["fake_message_cascade_size_rolling"],
+                    label="Fake-message cascades"
+                )
+                plt.plot(
+                    x,
+                    df["true_message_cascade_size_rolling"],
+                    label="True-message cascades"
+                )
                 plt.xlabel("Round")
-                plt.ylabel("Number of agents")
-                plt.title("Fake believers, corrected agents, and discarded messages")
+                plt.ylabel("Cascade size")
+                plt.title("Cascade size by message type")
                 plt.legend()
                 plt.tight_layout()
                 plt.show()
 
-            # 3. Mean reputation
-            if "mean_reputation" in df.columns:
+            # 2e. Trust and fake-news adaptation
+            behavioral_columns = [
+                ("mean_fake_tendency", "Mean fake tendency"),
+                ("mean_trust", "Mean sender-specific trust")
+            ]
+
+            available_behavioral_columns = [
+                (col, label)
+                for col, label in behavioral_columns
+                if f"{col}_rolling" in df.columns
+            ]
+
+            if len(available_behavioral_columns) > 0:
                 plt.figure(figsize=(8, 4))
-                plt.plot(x, df["mean_reputation"], alpha=0.35, label="Raw")
-                plt.plot(x, df["mean_reputation_rolling"], label=f"Rolling mean ({rolling_window})")
+
+                for col, label in available_behavioral_columns:
+                    plt.plot(
+                        x,
+                        df[f"{col}_rolling"],
+                        label=label
+                    )
+
                 plt.xlabel("Round")
-                plt.ylabel("Mean reputation")
-                plt.title("Mean reputation over time")
+                plt.ylabel("Mean value")
+                plt.title("Trust formation and fake-news adaptation")
+                plt.ylim(0, 1)
+                plt.legend()
+                plt.tight_layout()
+                plt.show()
+
+            # 2f. Influencer concentration
+            if "max_degree_ratio_rolling" in df.columns:
+                plt.figure(figsize=(8, 4))
+                plt.plot(
+                    x,
+                    df["max_degree_ratio"],
+                    alpha=0.25,
+                    label="Raw"
+                )
+                plt.plot(
+                    x,
+                    df["max_degree_ratio_rolling"],
+                    label=f"Rolling mean ({rolling_window})"
+                )
+                plt.xlabel("Round")
+                plt.ylabel("Max degree / possible max degree")
+                plt.title("Influencer concentration over time")
+                plt.ylim(0, 1)
                 plt.legend()
                 plt.tight_layout()
                 plt.show()
@@ -225,137 +410,9 @@ class NetworkPlotter():
                 plt.tight_layout()
                 plt.show()
 
-            # 5. Number of influencers
-            if "n_influencers" in df.columns:
-                plt.figure(figsize=(8, 4))
-                plt.plot(x, df["n_influencers"], alpha=0.35, label="Raw")
-                plt.plot(x, df["n_influencers_rolling"], label=f"Rolling mean ({rolling_window})")
-                plt.xlabel("Round")
-                plt.ylabel("Number of influencers")
-                plt.title("Influencer count over time")
-                plt.legend()
-                plt.tight_layout()
-                plt.show()
 
         return df, summary_df
 
-    def plot_degree_distribution_vs_barabasi(
-        self,
-        ba_m=None,
-        seed=42,
-        normalize=True,
-        log_y=False
-    ):
-        """
-        Compare the degree distribution of the current graph with a
-        Barabasi-Albert graph.
-
-        The Barabasi-Albert graph is generated with:
-        - same number of nodes as the current graph
-        - approximately similar average degree
-
-        Parameters
-        ----------
-        ba_m : int or None
-            Number of edges each new node attaches with in the BA graph.
-            If None, it is chosen so that BA average degree is close to the
-            current graph's average degree.
-
-        seed : int
-            Random seed for the BA graph.
-
-        normalize : bool
-            If True, plot fractions of nodes.
-            If False, plot raw node counts.
-
-        log_y : bool
-            If True, use logarithmic y-axis.
-        """
-
-        from collections import Counter
-
-        current_degrees = [degree for _, degree in self.G.degree()]
-        n = self.G.number_of_nodes()
-
-        if n == 0:
-            print("Graph has no nodes.")
-            return
-
-        current_avg_degree = sum(current_degrees) / n
-
-        # In a Barabasi-Albert graph, average degree is approximately 2m.
-        # So choose m close to current_avg_degree / 2.
-        if ba_m is None:
-            ba_m = round(current_avg_degree / 2)
-            ba_m = max(1, min(ba_m, n - 1))
-
-        ba_graph = nx.barabasi_albert_graph(
-            n=n,
-            m=ba_m,
-            seed=seed
-        )
-
-        ba_degrees = [degree for _, degree in ba_graph.degree()]
-
-        current_counts = Counter(current_degrees)
-        ba_counts = Counter(ba_degrees)
-
-        max_degree = max(
-            max(current_degrees),
-            max(ba_degrees)
-        )
-
-        degrees = list(range(max_degree + 1))
-
-        current_values = [current_counts.get(degree, 0) for degree in degrees]
-        ba_values = [ba_counts.get(degree, 0) for degree in degrees]
-
-        if normalize:
-            current_values = [value / n for value in current_values]
-            ba_values = [value / n for value in ba_values]
-            y_label = "Fraction of nodes"
-        else:
-            y_label = "Number of nodes"
-
-        bar_width = 0.4
-
-        current_x = [degree - bar_width / 2 for degree in degrees]
-        ba_x = [degree + bar_width / 2 for degree in degrees]
-
-        plt.figure(figsize=(10, 5))
-
-        plt.bar(
-            current_x,
-            current_values,
-            width=bar_width,
-            alpha=0.7,
-            label=(
-                f"Current graph "
-                f"(n={n}, avg degree={current_avg_degree:.2f})"
-            )
-        )
-
-        plt.bar(
-            ba_x,
-            ba_values,
-            width=bar_width,
-            alpha=0.7,
-            label=(
-                f"Barabasi-Albert "
-                f"(n={n}, m={ba_m}, avg degree={sum(ba_degrees) / n:.2f})"
-            )
-        )
-
-        plt.xlabel("Degree")
-        plt.ylabel(y_label)
-        plt.title("Degree distribution: current graph vs Barabasi-Albert graph")
-        plt.legend()
-        plt.tight_layout()
-
-        if log_y:
-            plt.yscale("log")
-
-        plt.show()
 
     def plot_degree_ccdf_vs_barabasi(self, ba_m=None, seed=42):
         """
@@ -440,27 +497,45 @@ class NetworkPlotter():
         plt.tight_layout()
         plt.show()
 
-    def print_network_degree_summary(self):
+
+    def plot_initial_degree_vs_final_degree(self):
         """
-        Print basic degree statistics for the current graph.
+        Plot initial degree against final degree.
+
+        Final influencers are highlighted in orange.
         """
 
-        degrees = [degree for _, degree in self.G.degree()]
-        n = self.G.number_of_nodes()
-
-        if n == 0:
-            print("Graph has no nodes.")
+        if not hasattr(self.social_network, "initial_degrees"):
+            print(
+                "No initial degree information found. "
+                "Make sure SocialNetwork stores self.initial_degrees after network creation."
+            )
             return
 
-        degree_series = pd.Series(degrees)
+        initial_degrees = self.social_network.initial_degrees
+        final_degrees = dict(self.G.degree())
+        final_influencer_nodes = set(self.social_network.influencer_nodes)
 
-        print("\n=== Degree summary ===")
-        print(f"Number of nodes: {n}")
-        print(f"Number of edges: {self.G.number_of_edges()}")
-        print(f"Average degree: {degree_series.mean():.2f}")
-        print(f"Median degree: {degree_series.median():.2f}")
-        print(f"Max degree: {degree_series.max()}")
-        print(f"Min degree: {degree_series.min()}")
-        print(f"Isolated nodes: {(degree_series == 0).sum()}")
-        print(f"Degree std: {degree_series.std():.2f}")
+        x = []
+        y = []
+        colors = []
+
+        for node in self.G.nodes():
+            x.append(initial_degrees[node])
+            y.append(final_degrees[node])
+
+            if node in final_influencer_nodes:
+                colors.append("orange")
+            else:
+                colors.append("lightblue")
+
+        plt.figure(figsize=(7, 5))
+        plt.scatter(x, y, c=colors, alpha=0.8)
+
+        plt.xlabel("Initial degree")
+        plt.ylabel("Final degree")
+        plt.title("Initial degree vs final degree")
+
+        plt.tight_layout()
+        plt.show()
 
