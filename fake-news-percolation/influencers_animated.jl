@@ -631,7 +631,7 @@ function plot_initial_degree_vs_final_payoff(sim::Simulation;
         alpha=0.75,
         xlabel="Initial node degree",
         ylabel="Final payoff",
-        title="Initial node degree vs final payoff, corr=$(round(corr_value; digits=3))",
+        title="Initial node degree vs normalized final payoff, corr=$(round(corr_value; digits=3))",
         legend=false,
         size=(800, 550)
     )
