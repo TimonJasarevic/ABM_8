@@ -1,4 +1,4 @@
-Deepfake Percolation ABM — Saltelli/Sobol sweep
+Fake News Percolation ABM — Saltelli/Sobol sweep
 ================================================
 Date: 2026-06-24T23:00:54.765
 Julia Threads: 192
