@@ -1,9 +1,6 @@
-"""Analysis helpers for the deepfake-percolation EDA / evidence scripts.
+"""Analysis helpers for the fake-news-percolation EDA / evidence scripts.
 
-Originally a best-effort reconstruction of three notebook helpers; now extended with the
-methodological fixes.
-
-Key references (verified): Raffinetti, Siletti & Vernizzi (2015) renormalised Gini;
+Key references: Raffinetti, Siletti & Vernizzi (2015) renormalised Gini;
 Sen (1976) / Stark (2025) welfare; Lakens (2013) d_av; Kirby & Gerlanc (2013) bootstrap CIs;
 Benjamini & Hochberg (1995) / Benjamini & Yekutieli (2001) FDR; Lakens et al. (2018) TOST;
 Hartigan & Hartigan (1985) dip test; Van Calster et al. (2019) flexible calibration;
@@ -55,10 +52,7 @@ def sen_welfare(x):
     """Sen (1976) social welfare, W = mean(x) * (1 - Gini(x)), evaluated on the ORIGINAL
     signed values via the Raffinetti-Siletti-Vernizzi renormalised Gini.
 
-    ``x`` is per-agent normalised payoff (``agent_veracity`` in [-1, 1]). NOTE the prior
-    implementation computed ``mean(x) * (1 - Gini(x - min(x)))``, mixing the original mean
-    with a Gini on min-shifted values; the shift is not Gini-invariant and varies per
-    simulation, distorting cross-scenario comparisons. This version removes the shift.
+    ``x`` is per-agent normalised payoff (``agent_veracity`` in [-1, 1]).
 
     Two documented limitations remain (report alongside the number): (1) mu*(1-G) is monotone
     increasing in EVERY value, so a gain accruing entirely at the top still raises W and it
@@ -76,9 +70,9 @@ def belief_dispersion(x):
     """Belief DISPERSION as normalised variance, ``4 * Var(x)`` on [0, 1]-bounded beliefs
     (0 = consensus, 1 = half at 0 / half at 1).
 
-    Renamed from ``polarization``: variance is the *dispersion* sense only (Bramson et al. 2017,
-    "nine senses of polarization") and does NOT imply two groups/modes — use :func:`dip_test`
-    for bimodality and :func:`esteban_ray` for group divergence.
+    Variance is the *dispersion* sense only (Bramson et al. 2017, "nine senses of polarization")
+    and does NOT imply two groups/modes — use :func:`dip_test` for bimodality and
+    :func:`esteban_ray` for group divergence.
     """
     x = np.asarray(x, dtype=float)
     if x.size == 0:
@@ -86,7 +80,7 @@ def belief_dispersion(x):
     return float(4.0 * np.var(x))
 
 
-# Backward-compatible alias (deprecated): existing callers importing ``polarization`` keep working.
+# ``polarization`` is an alias for the dispersion measure above (variance sense).
 polarization = belief_dispersion
 
 

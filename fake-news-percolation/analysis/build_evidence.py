@@ -1,0 +1,405 @@
+"""Build the evidence JSONs for the seeding-comparison analysis.
+
+Three subcommands write one JSON each, sharing the agent-veracity, paired-statistics and g3
+helpers below:
+
+    python analysis/build_evidence.py eda         -> analysis/eda_evidence.json
+    python analysis/build_evidence.py compare     -> analysis/compare_evidence.json
+    python analysis/build_evidence.py influencer  -> analysis/influencer_node_evidence.json
+
+The sweep directories default to the two sweeps that reproduce the published figures; override
+them for your own data with --baseline / --influencer. Data and output paths are resolved
+relative to this file (analysis/ + the repo root), so the subcommands run from any working
+directory and each JSON lands next to make_figures.py, which reads it. `compare` and
+`influencer` read multi-gigabyte node and cascade tables; wrap them with ram_monitor.py to run
+them under a memory watchdog. Install dependencies from requirements-analysis.txt.
+
+`compare` pairs a baseline sweep (uniform-random cascade seeding) against an influencer sweep
+(seeding from the highest-degree hubs). The two sweeps share the same Latin-hypercube design and
+per-simulation seeds, so simulations are matched by global_sim_id and the only difference is the
+cascade seed pool.
+"""
+import json, gc, os, sys
+import numpy as np, pandas as pd
+import pyarrow.feather as feather
+from pathlib import Path
+from scipy import stats
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+from utils import (sen_welfare, belief_dispersion, dip_test, bimodality_coefficient,
+                   flexible_calibration, cohens_d_av, bootstrap_ci, bh_fdr, tost_paired)
+
+DEFAULT_BASELINE   = os.path.join(REPO, "data", "sweep_2026_06_22_2150")  # uniform-random seeding (reproduces the paper)
+DEFAULT_INFLUENCER = os.path.join(REPO, "data", "sweep_2026_06_23_1522")  # hub seeding (reproduces the paper)
+N_RECORDED = 1000                                                         # recorded cascades per simulation
+
+
+# ------------------------------------------------------------------ shared helpers
+def g3(x):
+    return float(f"{x:.3g}")
+
+
+def agent_veracity(rep, best, worst):
+    """Degree-fair normalised payoff in [-1, 1]: losses scaled by the worst attainable payoff,
+    gains by the best attainable, 0 when there was no opportunity."""
+    return np.where((rep < 0) & (worst != 0), -(rep / np.where(worst == 0, 1, worst)),
+                    np.where((rep > 0) & (best != 0), rep / np.where(best == 0, 1, best), 0.0))
+
+
+def _paired_core(a, b, mask_nonfinite=False):
+    """Common paired statistics for diff = b - a: means, d_z, correlation-free d_av (Lakens 2013),
+    BCa bootstrap CI (Kirby & Gerlanc 2013), normal CI, paired t and Wilcoxon p-values. d_z is
+    CRN-inflated under common-random-number pairing; read d_av."""
+    a = np.asarray(a, float); b = np.asarray(b, float)
+    if mask_nonfinite:
+        m = np.isfinite(a) & np.isfinite(b)
+        a, b = a[m], b[m]
+    d = b - a; n = len(d)
+    md, sd, medd = float(d.mean()), float(d.std(ddof=1)), float(np.median(d))
+    dz = md / sd if sd > 0 else float("nan")
+    se = sd / np.sqrt(n)
+    dav = cohens_d_av(b, a)
+    blo, bhi = bootstrap_ci(d)
+    t, pt = stats.ttest_rel(b, a)
+    try:
+        w, pw = stats.wilcoxon(b, a)
+    except Exception:
+        pw = float("nan")
+    return {"a": a, "b": b, "d": d, "n": n, "md": md, "medd": medd,
+            "dz": dz, "se": se, "dav": dav, "blo": blo, "bhi": bhi, "pt": pt, "pw": pw}
+
+
+def paired_cmp(a, b, name):
+    """Baseline (a) vs influencer (b) paired-comparison row for compare_evidence.json."""
+    c = _paired_core(a, b)
+    mean_a, mean_b = float(c["a"].mean()), float(c["b"].mean())
+    rel = c["md"] / abs(mean_a) * 100 if mean_a != 0 else None
+    return {name: {
+        "mean_baseline": round(mean_a, 5), "mean_influencer": round(mean_b, 5),
+        "mean_diff": round(c["md"], 5), "median_diff": round(c["medd"], 5),
+        "cohens_dz": round(c["dz"], 4), "cohens_d_av": round(c["dav"], 4),
+        "ci95_diff_boot": [round(c["blo"], 5), round(c["bhi"], 5)],
+        "ci95_diff_normal": [round(c["md"] - 1.96*c["se"], 5), round(c["md"] + 1.96*c["se"], 5)],
+        "p_ttest": g3(c["pt"]), "p_wilcoxon": g3(c["pw"]),
+        "frac_influencer_gt_baseline": round(float((c["d"] > 0).mean()), 4),
+        "rel_change_pct": (round(rel, 2) if rel is not None else None),
+    }}
+
+
+def paired_inf(inf, non, name):
+    """Influencer-group (inf) vs non-influencer-group (non) paired-comparison row for
+    influencer_node_evidence.json; drops sims where either group value is non-finite."""
+    c = _paired_core(non, inf, mask_nonfinite=True)
+    return {name: {
+        "n_sims_used": int(c["n"]),
+        "mean_influencer": round(float(c["b"].mean()), 5),
+        "mean_noninfluencer": round(float(c["a"].mean()), 5),
+        "mean_diff": round(c["md"], 5), "median_diff": round(c["medd"], 5),
+        "cohens_dz": round(c["dz"], 4), "cohens_d_av": round(c["dav"], 4),
+        "ci95_diff_boot": [round(c["blo"], 5), round(c["bhi"], 5)],
+        "ci95_diff_normal": [round(c["md"] - 1.96*c["se"], 5), round(c["md"] + 1.96*c["se"], 5)],
+        "p_ttest": g3(c["pt"]), "p_wilcoxon": g3(c["pw"]),
+        "frac_sims_influencer_higher": round(float((c["d"] > 0).mean()), 4)}}
+
+
+# ------------------------------------------------------------------ eda
+def cmd_eda(baseline):
+    D = Path(baseline)
+    sim = feather.read_feather(D / "simulations.arrow")
+    node = feather.read_feather(D / "nodes.arrow")
+    out = {"n_sims": int(len(sim)), "n_nodes": int(len(node))}
+
+    def desc(s):
+        return {k: round(float(v), 4) for k, v in s.describe(percentiles=[.05, .25, .5, .75, .95]).to_dict().items()}
+
+    def hist(x, bins):
+        c, e = np.histogram(x, bins=bins)
+        return {"edges": [round(float(v), 3) for v in e], "counts": [int(v) for v in c]}
+
+    rep = node["payoff"].values; best = node["best_payoff"].values; worst = node["worst_payoff"].values
+    av = agent_veracity(rep, best, worst)
+    node["agent_veracity"] = av
+    out["agent_veracity_desc"] = desc(pd.Series(av))
+    out["agent_veracity_hist"] = hist(av, np.linspace(-1, 1, 11))
+    out["frac_zero_opportunity"] = round(float(((best == 0) & (worst == 0)).mean()), 4)
+    out["frac_zero_payoff"] = round(float((rep == 0).mean()), 4)
+    out["frac_av_eq_0"] = round(float((av == 0).mean()), 4)
+
+    sw = node.groupby("global_sim_id")["agent_veracity"].apply(lambda x: sen_welfare(x.values))
+    sim = sim.merge(sw.rename("sen_welfare").reset_index(), on="global_sim_id")
+    out["sen_welfare_desc"] = desc(sim["sen_welfare"]); out["sen_welfare_hist"] = hist(sim["sen_welfare"].values, 10)
+
+    node["D"] = (N_RECORDED - node["true_shares"] - node["fake_shares"]) / N_RECORDED
+    sim = sim.merge(node.groupby("global_sim_id")["D"].mean().rename("discard_rate").reset_index(), on="global_sim_id")
+    out["discard_rate_desc"] = desc(sim["discard_rate"]); out["discard_rate_hist"] = hist(sim["discard_rate"].values, 10)
+
+    node["tpr_mean"] = node["tpr_alpha"] / (node["tpr_alpha"] + node["tpr_beta"])
+    psi = node.groupby("global_sim_id")["tpr_mean"].apply(lambda x: belief_dispersion(x.values))
+    bc = node.groupby("global_sim_id")["tpr_mean"].apply(lambda x: bimodality_coefficient(x.values))
+    dipp = node.groupby("global_sim_id")["tpr_mean"].apply(lambda x: dip_test(x.values)["p"])
+    sim = sim.merge(psi.rename("psi").reset_index(), on="global_sim_id").merge(bc.rename("bc").reset_index(), on="global_sim_id").merge(dipp.rename("dip_p").reset_index(), on="global_sim_id")
+    out["psi_desc"] = desc(sim["psi"]); out["bc_desc"] = desc(sim["bc"])
+    out["psi_hist"] = hist(sim["psi"].values, 10); out["bc_hist"] = hist(sim["bc"].dropna().values, 10)
+    out["frac_bc_gt_0556"] = round(float((sim["bc"] > 5/9).mean()), 4)
+    out["frac_dip_p_lt_0p05"] = round(float((sim["dip_p"] < 0.05).mean()), 4)
+
+    for col in ["avg_true_cascade", "avg_fake_cascade", "veracity_differential", "avg_verify_rate", "avg_payoff"]:
+        out[col + "_desc"] = desc(sim[col])
+    out["true_cascade_hist"] = hist(sim["avg_true_cascade"].values, 10)
+    out["fake_cascade_hist"] = hist(sim["avg_fake_cascade"].values, 10)
+
+    node["true_prev"] = node["true_alpha"] / (node["true_alpha"] + node["true_beta"])
+    m = node.groupby("global_sim_id")["true_prev"].mean().reset_index().merge(sim[["global_sim_id", "p_fake"]], on="global_sim_id")
+    m["p_true"] = 1 - m["p_fake"]; m["bin"] = pd.cut(m["p_true"], bins=np.linspace(0, 1, 11))
+    cal = m.groupby("bin", observed=True).agg(p_true=("p_true", "mean"), belief=("true_prev", "mean"), n=("true_prev", "size")).reset_index(drop=True)
+    out["calibration"] = [{k: (round(float(v), 4) if k != "n" else int(v)) for k, v in r.items()} for r in cal.to_dict(orient="records")]
+    out["calibration_corr"] = round(float(m["p_true"].corr(m["true_prev"])), 4)
+    b1, b0 = np.polyfit(m["p_true"], m["true_prev"], 1); out["calibration_slope"] = round(float(b1), 4); out["calibration_intercept"] = round(float(b0), 4)
+    out["calibration_flexible"] = flexible_calibration(m["p_true"].values, m["true_prev"].values)
+
+    params = ["v_cost", "loss", "tpr", "fpr", "p_fake"]
+    outc = ["veracity_differential", "sen_welfare", "avg_verify_rate", "avg_true_cascade", "avg_fake_cascade", "discard_rate", "psi", "bc", "avg_payoff"]
+    out["pearson_param_outcome"] = {o: {p: round(float(sim[p].corr(sim[o])), 3) for p in params} for o in outc}
+    out["corr_verify_vs_vd"] = round(float(sim["avg_verify_rate"].corr(sim["veracity_differential"])), 3)
+    out["corr_verify_vs_discard"] = round(float(sim["avg_verify_rate"].corr(sim["discard_rate"])), 3)
+    out["corr_vd_vs_sw"] = round(float(sim["veracity_differential"].corr(sim["sen_welfare"])), 3)
+    out["corr_bcpsi_vs_vd"] = round(float((sim["bc"] * sim["psi"]).corr(sim["veracity_differential"])), 3)
+
+    sim["regime"] = pd.qcut(sim["sen_welfare"], 4, labels=[0, 1, 2, 3])
+    reg = sim.groupby("regime", observed=True)[["tpr", "fpr", "v_cost", "loss", "p_fake", "veracity_differential", "avg_verify_rate", "discard_rate", "sen_welfare"]].mean()
+    out["regime_means"] = [{k: round(float(v), 4) for k, v in r.items()} for r in reg.reset_index(drop=True).to_dict(orient="records")]
+
+    sim["pfb"] = pd.cut(sim["p_fake"], bins=7)
+    out["verify_by_pfake_bin"] = [{"bin": str(k), "verify": round(float(v), 4)} for k, v in sim.groupby("pfb", observed=True)["avg_verify_rate"].mean().items()]
+
+    json.dump(out, open(os.path.join(HERE, "eda_evidence.json"), "w"), indent=1)
+    print("WROTE eda_evidence.json with", len(out), "keys")
+
+
+# ------------------------------------------------------------------ compare (baseline vs influencer)
+def cmd_compare(baseline, influencer):
+    A_DIR, B_DIR = baseline, influencer
+    out = {}
+
+    # ---------- sim-level (cheap) ----------
+    cols = ["global_sim_id", "v_cost", "loss", "tpr", "fpr", "p_fake", "avg_payoff",
+            "avg_fake_cascade", "avg_true_cascade", "veracity_differential", "avg_verify_rate"]
+    simA = feather.read_feather(f"{A_DIR}/simulations.arrow", columns=cols).sort_values("global_sim_id").reset_index(drop=True)
+    simB = feather.read_feather(f"{B_DIR}/simulations.arrow", columns=cols).sort_values("global_sim_id").reset_index(drop=True)
+    assert (simA.global_sim_id.values == simB.global_sim_id.values).all()
+    out["n_pairs"] = int(len(simA))
+    out["pairing_validity_max_abs_param_diff"] = {
+        p: float(np.abs(simA[p].values - simB[p].values).max()) for p in ["v_cost", "loss", "tpr", "fpr", "p_fake"]}
+    out["sim_level"] = {}
+    for m in ["avg_payoff", "avg_fake_cascade", "avg_true_cascade", "veracity_differential", "avg_verify_rate"]:
+        out["sim_level"].update(paired_cmp(simA[m].values, simB[m].values, m))
+
+    # ---------- node-derived per-sim (heavy; one sweep at a time) ----------
+    node_cols = ["global_sim_id", "payoff", "best_payoff", "worst_payoff", "true_shares", "fake_shares",
+                 "tpr_alpha", "tpr_beta", "true_alpha", "true_beta"]
+
+    def node_per_sim(d):
+        nd = feather.read_feather(f"{d}/nodes.arrow", columns=node_cols)
+        rep, best, worst = nd["payoff"].values, nd["best_payoff"].values, nd["worst_payoff"].values
+        nd["agent_veracity"] = agent_veracity(rep, best, worst)
+        nd["D"] = (N_RECORDED - nd["true_shares"] - nd["fake_shares"]) / N_RECORDED
+        nd["tpr_mean"] = nd["tpr_alpha"] / (nd["tpr_alpha"] + nd["tpr_beta"])
+        nd["true_mean"] = nd["true_alpha"] / (nd["true_alpha"] + nd["true_beta"])
+        g = nd.groupby("global_sim_id")
+        res = pd.DataFrame({
+            "sen_welfare": g["agent_veracity"].apply(lambda x: sen_welfare(x.values)),
+            "discard_rate": g["D"].mean(),
+            "psi": g["tpr_mean"].apply(lambda x: belief_dispersion(x.values)),
+            "bc": g["tpr_mean"].apply(lambda x: bimodality_coefficient(x.values)),
+            "dip_p": g["tpr_mean"].apply(lambda x: dip_test(x.values)["p"]),
+            "mean_true_belief": g["true_mean"].mean(),
+        }).sort_index()
+        del nd, g; gc.collect()
+        return res
+    nodeA = node_per_sim(A_DIR); gc.collect()
+    nodeB = node_per_sim(B_DIR); gc.collect()
+    assert (nodeA.index.values == nodeB.index.values).all()
+    out["node_level"] = {}
+    for m in ["sen_welfare", "discard_rate", "psi", "bc", "dip_p", "mean_true_belief"]:
+        out["node_level"].update(paired_cmp(nodeA[m].values, nodeB[m].values, m))
+
+    # calibration (believed P(true) vs actual = 1 - p_fake), per sweep
+    def calib(node_tb, sim):
+        p_true = 1 - sim["p_fake"].values; bel = node_tb["mean_true_belief"].values
+        s, i = np.polyfit(p_true, bel, 1)
+        fc = flexible_calibration(p_true, bel)
+        return {"slope": round(float(s), 4), "intercept": round(float(i), 4),
+                "corr": round(float(np.corrcoef(p_true, bel)[0, 1]), 4), "flexible": fc}
+    out["calibration"] = {"baseline": calib(nodeA, simA), "influencer": calib(nodeB, simB)}
+
+    # ---------- cascade-level per-sim means (heavy; one sweep at a time) ----------
+    casc_cols = ["global_sim_id", "cascade_size", "max_depth", "seed_degree", "shares", "verifications"]
+
+    def casc_per_sim(d, rng):
+        cd = feather.read_feather(f"{d}/cascades.arrow", columns=casc_cols)
+        res = cd.groupby("global_sim_id")[["cascade_size", "max_depth", "seed_degree", "shares", "verifications"]].mean().sort_index()
+        cs = cd["cascade_size"].values
+        samp = cs if len(cs) <= 300000 else rng.choice(cs, 300000, replace=False)
+        del cd; gc.collect()
+        return res, np.asarray(samp, float)
+    rng = np.random.default_rng(0)
+    cascA, csA = casc_per_sim(A_DIR, rng); gc.collect()
+    cascB, csB = casc_per_sim(B_DIR, rng); gc.collect()
+    assert (cascA.index.values == cascB.index.values).all()
+    out["cascade_level"] = {}
+    for m in ["cascade_size", "max_depth", "seed_degree", "shares", "verifications"]:
+        out["cascade_level"].update(paired_cmp(cascA[m].values, cascB[m].values, "mean_" + m))
+    ks = stats.ks_2samp(csA, csB)
+    wdist = float(stats.wasserstein_distance(csA, csB))
+    edist = float(stats.energy_distance(csA, csB))
+    out["cascade_size_KS"] = {"statistic": round(float(ks.statistic), 4), "p": g3(ks.pvalue),
+                              "wasserstein_distance": round(wdist, 4), "energy_distance": round(edist, 4),
+                              "mean_baseline": round(float(csA.mean()), 3), "mean_influencer": round(float(csB.mean()), 3),
+                              "median_baseline": round(float(np.median(csA)), 1), "median_influencer": round(float(np.median(csB)), 1)}
+
+    # ---- multiple-comparison control across all paired tests (Benjamini-Yekutieli) ----
+    _keys, _ps = [], []
+    for _section in ("sim_level", "node_level", "cascade_level"):
+        for _m, _d in out.get(_section, {}).items():
+            if isinstance(_d, dict) and "p_ttest" in _d:
+                _keys.append((_section, _m)); _ps.append(_d["p_ttest"])
+    if _ps:
+        _q = bh_fdr(_ps, method="fdr_by")
+        for (_section, _m), _qi in zip(_keys, _q):
+            out[_section][_m]["p_ttest_fdr_by"] = g3(_qi)
+
+    # ---- equivalence test (TOST) for fake-news reach; SESOI = 0.05 of the network ----
+    try:
+        out["sim_level"]["avg_fake_cascade"]["tost_equivalence"] = tost_paired(
+            simB["avg_fake_cascade"].values, simA["avg_fake_cascade"].values, -0.05, 0.05)
+    except Exception:
+        pass
+
+    json.dump(out, open(os.path.join(HERE, "compare_evidence.json"), "w"), indent=1)
+    print("WROTE compare_evidence.json  (n_pairs=%d)" % out["n_pairs"])
+    print(json.dumps(out, indent=1))
+
+
+# ------------------------------------------------------------------ influencer vs ordinary agents
+def cmd_influencer(influencer):
+    B = influencer
+    out = {}
+
+    # ---- influencer identity from cascades: unique seed_nodes per sim (+ seed degree context) ----
+    cd = feather.read_feather(f"{B}/cascades.arrow", columns=["global_sim_id", "seed_node", "seed_degree"])
+    infl_pairs = cd[["global_sim_id", "seed_node"]].drop_duplicates()
+    cnt = infl_pairs.groupby("global_sim_id").size()
+    out["influencer_id_check"] = {"n_sims": int(cnt.shape[0]),
+        "influencers_per_sim_min": int(cnt.min()), "mean": round(float(cnt.mean()), 3), "max": int(cnt.max()),
+        "note": "find_influencers returns exactly 15 (floor(0.05*300)); unique seeds should be <=15 and ~15 if all hubs got seeded"}
+    out["influencer_mean_seed_degree"] = round(float(cd["seed_degree"].mean()), 3)
+    infl_pairs = infl_pairs.rename(columns={"seed_node": "node_id"}); infl_pairs["is_influencer"] = True
+    del cd; gc.collect()
+
+    # ---- node metrics ----
+    nd = feather.read_feather(f"{B}/nodes.arrow",
+            columns=["global_sim_id", "node_id", "payoff", "best_payoff", "worst_payoff", "true_shares", "fake_shares"])
+    nd = nd.merge(infl_pairs, on=["global_sim_id", "node_id"], how="left")
+    nd["is_influencer"] = nd["is_influencer"].fillna(False).astype(bool)
+    rep, best, worst = nd["payoff"].values, nd["best_payoff"].values, nd["worst_payoff"].values
+    nd["agent_veracity"] = agent_veracity(rep, best, worst)
+    nd["total_shares"] = nd["true_shares"] + nd["fake_shares"]
+    nd["participated"] = (nd["total_shares"] > 0).astype(float)
+    nd["node_veracity_diff"] = nd["true_shares"] - nd["fake_shares"]
+    nd["truth_share_ratio"] = np.where(nd["total_shares"] > 0, nd["true_shares"] / nd["total_shares"].replace(0, 1), np.nan)
+
+    out["group_counts"] = {"influencer_node_obs": int(nd["is_influencer"].sum()),
+                           "noninfluencer_node_obs": int((~nd["is_influencer"]).sum())}
+
+    # ---- pooled (all node-observations): DESCRIPTIVE ONLY (pseudoreplicated, Hurlbert 1984) ----
+    def pooled(col, participants_only=False):
+        sub = nd[nd["total_shares"] > 0] if participants_only else nd
+        gi = sub[sub.is_influencer][col]; gn = sub[~sub.is_influencer][col]
+        a, b = gi.dropna().values, gn.dropna().values
+        sp = np.sqrt(((a.var(ddof=1) * (len(a) - 1)) + (b.var(ddof=1) * (len(b) - 1))) / (len(a) + len(b) - 2))
+        d = (a.mean() - b.mean()) / sp if sp > 0 else float("nan")
+        return {"influencer_mean": round(float(a.mean()), 5), "noninfluencer_mean": round(float(b.mean()), 5),
+                "influencer_median": round(float(np.median(a)), 5), "noninfluencer_median": round(float(np.median(b)), 5),
+                "cohens_d_pooled_DESCRIPTIVE_ONLY": round(float(d), 4),
+                "_warning": "pseudoreplicated (Hurlbert 1984); NOT an inferential effect size - use paired_per_sim"}
+    out["pooled"] = {
+        "agent_veracity": pooled("agent_veracity"),
+        "payoff": pooled("payoff"),
+        "node_veracity_diff": pooled("node_veracity_diff"),
+        "truth_share_ratio_participants": pooled("truth_share_ratio", participants_only=True),
+        "total_shares": pooled("total_shares"),
+        "participation_rate": {"influencer": round(float(nd[nd.is_influencer]["participated"].mean()), 4),
+                                "noninfluencer": round(float(nd[~nd.is_influencer]["participated"].mean()), 4)},
+    }
+
+    # ---- per-sim group means then PAIRED across sims ----
+    g = nd.groupby(["global_sim_id", "is_influencer"])
+    agg = g.agg(payoff=("payoff", "mean"), agent_veracity=("agent_veracity", "mean"),
+                total_shares=("total_shares", "mean"), node_veracity_diff=("node_veracity_diff", "mean"),
+                participation=("participated", "mean")).reset_index()
+    part = nd[nd.total_shares > 0].groupby(["global_sim_id", "is_influencer"])["truth_share_ratio"].mean().reset_index()
+    agg = agg.merge(part, on=["global_sim_id", "is_influencer"], how="left")
+    inf = agg[agg.is_influencer].set_index("global_sim_id").sort_index()
+    non = agg[~agg.is_influencer].set_index("global_sim_id").sort_index()
+    common = inf.index.intersection(non.index)
+    inf, non = inf.loc[common], non.loc[common]
+    out["paired_per_sim"] = {}
+    for m in ["payoff", "agent_veracity", "total_shares", "node_veracity_diff", "participation", "truth_share_ratio"]:
+        out["paired_per_sim"].update(paired_inf(inf[m].values, non[m].values, m))
+
+    # ---- pseudoreplication: the pooled d implies FALSE PRECISION (Hurlbert 1984; Lazic 2010) ----
+    out["_methods_note"] = ("paired_per_sim is the valid estimator; the pooled block is DESCRIPTIVE "
+        "ONLY (pseudoreplicated). pseudoreplication_payoff shows a SE built on ~15M independent rows is "
+        "far smaller than the valid per-simulation paired SE (false precision).")
+    try:
+        gi = nd[nd.is_influencer]["payoff"].values
+        gn = nd[~nd.is_influencer]["payoff"].values
+        psd = np.sqrt(((gi.var(ddof=1) * (len(gi) - 1)) + (gn.var(ddof=1) * (len(gn) - 1))) / (len(gi) + len(gn) - 2))
+        naive_se_indep = float(psd * np.sqrt(1.0 / len(gi) + 1.0 / len(gn)))
+        dpair = inf["payoff"].values - non["payoff"].values
+        valid_paired_se = float(dpair.std(ddof=1) / np.sqrt(len(dpair)))
+        out["pseudoreplication_payoff"] = {
+            "n_influencer_rows": int(len(gi)), "n_ordinary_rows": int(len(gn)),
+            "naive_independent_se_15M": round(naive_se_indep, 4),
+            "valid_paired_se": round(valid_paired_se, 4),
+            "false_precision_ratio": round(valid_paired_se / naive_se_indep, 2) if naive_se_indep > 0 else None}
+    except Exception as e:
+        out["pseudoreplication_payoff"] = {"error": repr(e)}
+    # mixed-model cross-check on a subsample: a valid cluster-aware within-sim estimate
+    try:
+        import statsmodels.formula.api as smf
+        rng2 = np.random.default_rng(0)
+        sims_all = nd["global_sim_id"].unique()
+        keep = rng2.choice(sims_all, size=int(min(300, len(sims_all))), replace=False)
+        sub = nd[nd["global_sim_id"].isin(keep)][["payoff", "is_influencer", "global_sim_id"]].copy()
+        sub["is_influencer"] = sub["is_influencer"].astype(int)
+        mm = smf.mixedlm("payoff ~ is_influencer", sub, groups=sub["global_sim_id"]).fit()
+        out["mixed_model_payoff"] = {"n_sims_subsample": int(len(keep)),
+            "is_influencer_coef": round(float(mm.params["is_influencer"]), 4),
+            "cluster_aware_se": round(float(mm.bse["is_influencer"]), 4),
+            "note": "within-sim contrast; corroborates the per-sim paired estimate"}
+    except Exception as e:
+        out["mixed_model_payoff"] = {"error": repr(e)}
+
+    json.dump(out, open(os.path.join(HERE, "influencer_node_evidence.json"), "w"), indent=1)
+    print("WROTE influencer_node_evidence.json")
+    print(json.dumps(out, indent=1))
+
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser(description="Build the evidence JSONs for the seeding-comparison analysis.")
+    ap.add_argument("command", choices=["eda", "compare", "influencer"])
+    ap.add_argument("--baseline", default=DEFAULT_BASELINE,
+                    help="baseline (uniform-random seeding) sweep directory")
+    ap.add_argument("--influencer", default=DEFAULT_INFLUENCER,
+                    help="influencer (hub seeding) sweep directory")
+    args = ap.parse_args()
+    if args.command == "eda":
+        cmd_eda(args.baseline)
+    elif args.command == "compare":
+        cmd_compare(args.baseline, args.influencer)
+    else:
+        cmd_influencer(args.influencer)
