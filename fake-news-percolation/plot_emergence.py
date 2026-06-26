@@ -38,7 +38,7 @@ def main():
     fig, ax = plt.subplots(figsize=(6.5, 5.5))
 
     # Perfect calibration line.
-    ax.plot([0, 1], [0, 1], linestyle="--", linewidth=1.2, label="Perfect calibration")
+    ax.plot([0, 1], [0, 1], linestyle="--", linewidth=1.2, label="Non-emergent behaviour")
 
     # Mean belief with uncertainty.
     ax.errorbar(
