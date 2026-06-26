@@ -9,7 +9,7 @@ The repository supports two downstream analyses:
 
 1. **Global sensitivity analysis (Sobol).** Variance-based attribution of four outcome metrics
    (`veracity_differential`, `avg_verify_rate`, `avg_payoff`, `sen_welfare`) to the seven model
-   inputs, with a deterministic/stochastic (Approach-IV) decomposition.
+   inputs, with a deterministic/stochastic decomposition.
 2. **Seeding comparison.** A paired comparison of two cascade-seeding rules, uniform-random versus
    high-degree "influencer" hubs, on welfare, belief calibration, and misinformation reach.
 
