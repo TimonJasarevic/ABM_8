@@ -2,7 +2,7 @@
 
 An agent-based model (ABM) of how fake news, including deepfake-style content, spreads, is
 verified, and is shared across a social network, and how that interacts with users' verification
-cost, reputation concerns, bounded rationality, and loss aversion. The simulation is written by Dupont, C. (2026). deepfake-percolation [julia]. GitHub. https://github.com/charlesaugdupont/deepfake-percolation in Julia (`run_experiment.jl`) and is expanded on in this repository; the analysis and figures are in Python.
+cost, reputation concerns, bounded rationality, and loss aversion. The simulation was originally written by Dupont, C. (2026). deepfake-percolation [julia]. GitHub. https://github.com/charlesaugdupont/deepfake-percolation in Julia (`run_experiment.jl`) and is expanded on in this repository; the analysis and figures are in Python.
 
 
 The repository supports two downstream analyses:
