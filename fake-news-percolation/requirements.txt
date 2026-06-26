@@ -1,0 +1,26 @@
+# Python dependencies for the fake-news-percolation analysis code.
+#
+# The repository has two Python pipelines whose dependency stacks are mutually
+# incompatible in a single environment, so they are documented separately below.
+# Versions are pinned to a verified-working set.
+
+# --- Main pipeline: evidence building + figures (analysis/*.py) ---
+# Install into one environment:  pip install -r requirements.txt
+numpy==2.3.1
+pandas==3.0.1
+scipy==1.15.2
+pyarrow==23.0.1
+statsmodels==0.14.6
+diptest==0.11.0
+psutil==7.0.0
+matplotlib==3.10.1
+seaborn==0.13.2
+
+# --- Optional pipeline: Sobol global sensitivity analysis (sobol/*.py) ---
+# SALib 1.4.8 predates NumPy 2, so it cannot coexist with the stack above.
+# Create a SEPARATE environment (numpy < 2) and install the pinned set below:
+#
+#   SALib==1.4.8
+#   numpy==1.26.4
+#   pandas==1.5.3
+#   matplotlib==3.9.4
