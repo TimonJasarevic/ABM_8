@@ -622,5 +622,8 @@ end
 
 
 if !@isdefined(_INCLUDED_AS_MODULE)
-    run_sobol_sweep(; write_full = get(ENV, "WRITE_FULL", "false") == "true")
+    write_full = get(ENV, "WRITE_FULL", "false") == "true"
+    # stderr is unbuffered, so this is visible in the slurm log even if the job is later killed
+    println(stderr, "WRITE_FULL env=", repr(get(ENV, "WRITE_FULL", "<unset>")), " -> write_full=", write_full); flush(stderr)
+    run_sobol_sweep(; write_full=write_full)
 end

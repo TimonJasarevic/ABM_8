@@ -44,6 +44,7 @@
 #SBATCH --exclusive
 #SBATCH --time=06:00:00
 #SBATCH --output=slurm-%j.out
+#SBATCH --error=slurm-%j.err
 
 set -euo pipefail
 
@@ -65,7 +66,13 @@ if [[ ! -f "$PROJ/sobol/design.csv" ]]; then
     exit 1
 fi
 
+# WRITE_FULL: enable the heavy per-cascade/node/edge Arrow files. Accept it from a positional
+# arg ($1, always delivered to the job script) or the environment, and export it so the julia
+# child sees it. Robust submit forms:  `sbatch run_snellius.sh true`  or  `WRITE_FULL=true sbatch run_snellius.sh`.
+export WRITE_FULL="${1:-${WRITE_FULL:-false}}"
+echo "WRITE_FULL (job script) = '$WRITE_FULL'"
+
 julia --project="$PROJ" "$PROJ/run_experiment_influencers.jl"
 
-echo "done=$(date)  output in $PROJ/data/ (simulations.arrow + simulations.csv)"
+echo "done=$(date)  WRITE_FULL=$WRITE_FULL  output in $PROJ/data/sweep_*/"
 echo "Next (off-node, needs Python + SALib): python sobol/analyze.py"
