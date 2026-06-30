@@ -30,8 +30,37 @@ from SALib.analyze import sobol as sobol_analyze
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
-OUTPUTS = ["veracity_differential", "avg_verify_rate", "avg_payoff", "sen_welfare"]
+OUTPUTS = ["veracity_differential", "avg_verify_rate", "avg_payoff", "sen_welfare", "avg_structural_virality"]
+
+OUTPUT_LABELS = {
+    "veracity_differential": "Veracity\ndifferential",
+    "avg_verify_rate": "Verification\nrate",
+    "avg_payoff": "Average\npayoff",
+    "sen_welfare": "SEN\nwelfare",
+    "avg_structural_virality": "Structural\nvirality",
+}
+
+FACTOR_ORDER = [
+    "v_cost",
+    "loss",
+    "tpr",
+    "fpr",
+    "p_fake",
+    "log10_lambda",
+    "loss_aversion",
+]
+
+FACTOR_LABELS = {
+    "v_cost": "Verification cost",
+    "loss": "Misinformation loss",
+    "tpr": "True positive rate",
+    "fpr": "False positive rate",
+    "p_fake": "Fake-news probability",
+    "log10_lambda": r"Rationality ($\log_{10}\lambda$)",
+    "loss_aversion": "Loss aversion",
+}
 
 
 def latest_sweep() -> Path:
@@ -115,7 +144,6 @@ def main():
                     ST=Si["ST"][i], ST_conf=Si["ST_conf"][i],
                     stoch_frac=stoch_frac,
                 ))
-            _plot(o, comp, problem["names"], Si, out)
             if cso:
                 names = problem["names"]
                 for i in range(len(names)):
@@ -131,6 +159,8 @@ def main():
     if s2_rows:
         pd.DataFrame(s2_rows).to_csv(out / "sa_indices_S2.csv", index=False)
 
+    make_dotgrids(res, out)
+
     print(res.to_string(index=False))
     print("\nStochastic fraction E[V(Y|X)]/V(Y) per output:")
     for o in OUTPUTS:
@@ -138,21 +168,95 @@ def main():
     print(f"\nReplicates per design point R = {R}; saved indices, table, and figures to {out}/")
 
 
-def _plot(output, component, names, Si, out: Path):
-    """Course-style horizontal error-bar plot of S1 and ST for one component."""
-    y = np.arange(len(names))
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.errorbar(Si["S1"], y - 0.12, xerr=Si["S1_conf"], fmt="o", capsize=3, label="$S_1$ first-order")
-    ax.errorbar(Si["ST"], y + 0.12, xerr=Si["ST_conf"], fmt="s", capsize=3, label="$S_T$ total-order")
-    ax.axvline(0, color="k", lw=0.8)
-    ax.set_yticks(y)
-    ax.set_yticklabels(names)
-    ax.set_xlabel("Sobol index")
-    ax.set_title(f"{output} ({component})")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(out / f"sa_sobol_{output}_{component}.png", dpi=150)
+def _label_from_dir(out_dir: Path) -> str:
+    """Config label for the figure filename, derived from the results dir name."""
+    name = out_dir.name
+    return name.split("_sv")[0] if "_sv" in name else name
+
+
+def make_dotgrids(df: pd.DataFrame, out_dir: Path) -> None:
+    """Consolidated Sobol dot-grid for each variance component."""
+    for component in ("deterministic", "stochastic"):
+        plot_dotgrid(df, out_dir, component)
+
+
+def plot_dotgrid(df: pd.DataFrame, out_dir: Path, component: str) -> None:
+    """Dot-grid of S1 (circle) and ST (square) for all outputs and factors of one
+    variance component: x-axis = outputs, color = factor."""
+    sub = df[df["component"] == component].copy()
+    label = _label_from_dir(out_dir)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    x_base = np.arange(len(OUTPUTS))
+    factor_offsets = np.linspace(-0.33, 0.33, len(FACTOR_ORDER))
+    metric_offsets = {"S1": -0.018, "ST": 0.018}
+    marker_map = {"S1": "o", "ST": "s"}
+    conf_map = {"S1": "S1_conf", "ST": "ST_conf"}
+
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    factor_colors = {f: colors[i % len(colors)] for i, f in enumerate(FACTOR_ORDER)}
+
+    for factor_index, factor in enumerate(FACTOR_ORDER):
+        factor_df = sub[sub["factor"] == factor]
+        for metric in ("S1", "ST"):
+            xs, ys, yerrs = [], [], []
+            for output_index, output in enumerate(OUTPUTS):
+                row = factor_df[factor_df["output"] == output]
+                if row.empty:
+                    continue
+                xs.append(x_base[output_index] + factor_offsets[factor_index] + metric_offsets[metric])
+                ys.append(float(row[metric].iloc[0]))
+                yerrs.append(float(row[conf_map[metric]].iloc[0]))
+            ax.errorbar(
+                xs, ys, yerr=yerrs, fmt=marker_map[metric], linestyle="none",
+                markersize=5.5, capsize=3, elinewidth=1.0, markeredgewidth=0.9,
+                color=factor_colors[factor], ecolor=factor_colors[factor], alpha=0.95,
+            )
+
+    ax.axhline(0, linewidth=0.8, color="black", alpha=0.8)
+
+    ax.set_xticks(x_base)
+    ax.set_xticklabels([OUTPUT_LABELS[o] for o in OUTPUTS], fontsize=10)
+
+    if component == "deterministic":
+        ax.set_ylim(-0.10, 1.05)
+    else:
+        # Stochastic CIs are much wider; fit the axis so error bars aren't clipped.
+        lo = min(0.0, float((sub["S1"] - sub["S1_conf"]).min()))
+        hi = float(max((sub["ST"] + sub["ST_conf"]).max(), (sub["S1"] + sub["S1_conf"]).max()))
+        pad = 0.05 * (hi - lo)
+        ax.set_ylim(lo - pad, hi + pad)
+    ax.set_xlim(-0.60, len(OUTPUTS) - 0.40)
+
+    ax.set_xlabel("Measured output", fontsize=11)
+    ax.set_ylabel("Sobol index", fontsize=11)
+    ax.set_title(f"{component.capitalize()} Sobol sensitivity by output", fontsize=14)
+
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_axisbelow(True)
+
+    factor_handles = [
+        Line2D([0], [0], marker="o", linestyle="none", color=factor_colors[f],
+               label=FACTOR_LABELS[f], markersize=6.5)
+        for f in FACTOR_ORDER
+    ]
+    metric_handles = [
+        Line2D([0], [0], marker="o", linestyle="none", color="black", label=r"$S_1$", markersize=6.5),
+        Line2D([0], [0], marker="s", linestyle="none", color="black", label=r"$S_T$", markersize=6.5),
+    ]
+
+    fig.legend(handles=factor_handles, title="Parameter", loc="lower center",
+               bbox_to_anchor=(0.5, 0.045), ncol=4, frameon=False, fontsize=9, title_fontsize=10)
+    fig.legend(handles=metric_handles, title="Index", loc="lower center",
+               bbox_to_anchor=(0.5, -0.035), ncol=2, frameon=False, fontsize=9, title_fontsize=10)
+
+    fig.tight_layout(rect=(0, 0.22, 1, 1))
+
+    out_path = out_dir / f"sa_sobol_{component}_{label}.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def _latex(res: pd.DataFrame, path: Path):
