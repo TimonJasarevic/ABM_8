@@ -53,7 +53,11 @@ module load EESSI/2025.06 && module load Julia/1.12.2        # EESSI stack (SURF
 julia --version
 
 PROJ="$HOME/fake-news-percolation"
-cd "$PROJ"                           # run + write here; output -> $PROJ/data/sweep_<timestamp>
+# Large sweep output (~84 GB with WRITE_FULL) goes to scratch, not $HOME: the SURF home quota is
+# only 200 GiB and SURF recommends scratch for "voluminous job I/O"; scratch-shared = 8 TiB.
+# CAVEAT: scratch-shared auto-deletes files unmodified for 14 days and is NOT backed up -- run the
+# analysis (or copy results back to $HOME) promptly. (https://servicedesk.surf.nl Snellius filesystems)
+RUN_DIR="/scratch-shared/$USER/fake-news-percolation"
 
 # one Julia thread per allocated core (reads JULIA_NUM_THREADS automatically)
 export JULIA_NUM_THREADS="$SLURM_CPUS_PER_TASK"
@@ -66,13 +70,24 @@ if [[ ! -f "$PROJ/sobol/design.csv" ]]; then
     exit 1
 fi
 
+# Stage the design on scratch and cd there: the runner reads sobol/design.csv and writes
+# data/<sweep> RELATIVE TO CWD, so this keeps the large output on scratch instead of $HOME.
+mkdir -p "$RUN_DIR/sobol"
+cp -f "$PROJ/sobol/design.csv" "$RUN_DIR/sobol/design.csv"
+cd "$RUN_DIR"                        # output -> $RUN_DIR/data/sweep_<timestamp>_<tag>
+
 # WRITE_FULL: enable the heavy per-cascade/node/edge Arrow files. Accept it from a positional
 # arg ($1, always delivered to the job script) or the environment, and export it so the julia
 # child sees it. Robust submit forms:  `sbatch run_snellius.sh true`  or  `WRITE_FULL=true sbatch run_snellius.sh`.
 export WRITE_FULL="${1:-${WRITE_FULL:-false}}"
 echo "WRITE_FULL (job script) = '$WRITE_FULL'"
 
+# OUT_TAG: label the output dir (data/sweep_<ts>_<tag>) so a parallel baseline+influencer pair
+# never collides on the minute-resolution timestamp. The runner reads it from the environment.
+export OUT_TAG="influencer"
+echo "OUT_TAG (job script) = '$OUT_TAG'"
+
 julia --project="$PROJ" "$PROJ/run_experiment_influencers.jl"
 
-echo "done=$(date)  WRITE_FULL=$WRITE_FULL  output in $PROJ/data/sweep_*/"
+echo "done=$(date)  WRITE_FULL=$WRITE_FULL  output in $RUN_DIR/data/sweep_*/"
 echo "Next (off-node, needs Python + SALib): python sobol/analyze.py"
