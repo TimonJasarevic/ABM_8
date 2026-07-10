@@ -62,5 +62,5 @@ analysis/runs/replication_justification/
 *.zip
 *.log
 slurm-*.out
-reproduction_jasss_07_06/
+reproduction_jasss_*/
 snellius_logs/

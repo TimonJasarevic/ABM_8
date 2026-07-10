@@ -30,7 +30,7 @@ published sweeps and analysis/runs/nodecache_* (override with --baseline / --inf
 --cache; the stream subcommands take an explicit --out so a partial stream can never
 silently overwrite the verified cache). The paired-statistics conventions live in
 lib/paired_stats.py. The superseded whole-arrow reducer (~55-60 GiB peak, the reason this
-step once needed an HPC node) is retained in the reproduction package's archive.
+step once needed an HPC node) is retained in the development archive (not distributed).
 """
 import argparse
 import gc
