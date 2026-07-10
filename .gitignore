@@ -32,4 +32,13 @@ results/
 outputs/
 figures/
 *.csv
-*.parquet
+*.npz
+*.arrow
+*.zip
+*.log
+
+# misc
+data/
+reproduction_jasss_07_06/
+snellius_logs/
+analysis/runs/
