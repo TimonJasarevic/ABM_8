@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Snellius (SURF) SLURM job: faken-news-percolation influencer sweep
+# Snellius (SURF) SLURM job: fake-news-percolation influencer sweep
 # Runs run_experiment_influencers.jl (the Sobol/Saltelli sweep; default ~430,080 sims)
 # on ONE full Genoa node (192 cores / 384 GiB), shared-memory multithreaded.
 #
@@ -11,7 +11,7 @@
 #        ~/fake-news-percolation/run_snellius.sh   (this file)
 #        ~/fake-news-percolation/sobol/            (scripts + design.csv from step 1b)
 #   1b. The Julia runner READS sobol/design.csv (the SALib Saltelli design). Generate it
-#       once with Python + SALib (e.g. locally in the `ABM` conda env, then copy sobol/):
+#       once with Python + SALib (e.g. locally in the Sobol-SA environment (numpy<2, see requirements.txt), then copy sobol/):
 #          python sobol/make_design.py --N 1024     # -> sobol/design.csv (+ problem.json)
 #       It is small and deterministic (seed=42), so no Python is needed on the node.
 #   2. Make Julia available. CONFIRM what your Snellius offers first:
@@ -36,7 +36,7 @@
 # =============================================================================
 
 #SBATCH --job-name=deepfake_influencers
-# Genoa thin node = 192 cores / 384 GiB; take the whole node (exclusive) for max RAM.
+# Genoa thin node = 192 cores / 384 GiB; take the whole node (exclusive) for maximum RAM.
 #SBATCH --partition=genoa
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

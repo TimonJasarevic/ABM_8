@@ -1,10 +1,10 @@
 #!/bin/bash
 # =============================================================================
-# Snellius (SURF) SLURM job: full 7-factor analysis of a paired baseline+influencer sweep.
+# Snellius (SURF) SLURM job: full analysis of a paired baseline+influencer sweep.
 # Pure Python (no Julia). The job runs the evidence pipeline and the figures:
-#   1. eda        --baseline   <BASELINE>                          -> eda_evidence_7f.json  (uniform-sweep descriptives)
-#   2. influencer --influencer <INFLUENCER>                        -> influencer_node_evidence_7f.json
-#   3. compare    --baseline <BASELINE> --influencer <INFLUENCER>  -> compare_evidence_7f.json  (asserts the 1:1 pairing)
+#   1. eda        --baseline   <BASELINE>                          -> eda_evidence.json  (uniform-sweep descriptives)
+#   2. influencer --influencer <INFLUENCER>                        -> influencer_node_evidence.json
+#   3. compare    --baseline <BASELINE> --influencer <INFLUENCER>  -> compare_evidence.json  (asserts the 1:1 pairing)
 #   4. make_figures.py <run_dir>  -> every figure whose inputs are present: the nine evidence-JSON
 #      figures (including the structural-virality row of the seeding forest); the five sweep-table figures are
 #      skipped where the local sweep copies are absent.
@@ -18,7 +18,7 @@
 # Sizing. The pipeline is RAM-bound and effectively single-threaded, so parallelism cannot lower
 # the cost. The heaviest step is compare, which reads both sweeps' nodes and cascades tables (the
 # cascade projection is 7 columns including structural_virality, ~27.5 GB, for a ~55-60 GiB peak).
-# --mem=96G buys ~55 billed cores on genoa (96/1.75) and covers that peak: MALLOC_TRIM returns
+# --mem=96G corresponds to ~55 billed cores on genoa (96/1.75) and covers that peak: MALLOC_TRIM returns
 # freed memory between the two cascade reads, and 96G already carried the influencer step's
 # ~55 GiB. If compare is OOM-killed, raise to 128G. Expected runtime is ~25-40 min, i.e. ~23-37
 # SBU (roughly 1-2% of the ~1780 SBU that generated the two sweeps).
@@ -32,7 +32,7 @@
 #   Monitor: squeue -u $USER       Log: slurm-analysis-<jobid>.out
 # =============================================================================
 
-#SBATCH --job-name=fnp_analysis_7f
+#SBATCH --job-name=fnp_analysis
 #SBATCH --partition=genoa
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -75,23 +75,23 @@ export MALLOC_ARENA_MAX=2 MALLOC_TRIM_THRESHOLD_=0
 BE="$PROJ/analysis/build_evidence.py"
 # The three steps run sequentially in separate processes; each peaks at tens of GiB, so they must
 # not be backgrounded.
-python "$BE" eda        --baseline   "$BASELINE"                              # -> eda_evidence_7f.json
-python "$BE" influencer --influencer "$INFLUENCER"                           # -> influencer_node_evidence_7f.json
-python "$BE" compare    --baseline   "$BASELINE" --influencer "$INFLUENCER"  # -> compare_evidence_7f.json (asserts pairing)
+python "$BE" eda        --baseline   "$BASELINE"                              # -> eda_evidence.json
+python "$BE" influencer --influencer "$INFLUENCER"                           # -> influencer_node_evidence.json
+python "$BE" compare    --baseline   "$BASELINE" --influencer "$INFLUENCER"  # -> compare_evidence.json (asserts pairing)
 
 # ---- Archive this run's three JSONs and figures under analysis/runs/$RUN_TAG/ ----
 # The archive holds copies; the canonical JSONs stay in analysis/.
 mkdir -p "$RUN_OUT"
-cp -f "$PROJ/analysis/"{eda,influencer_node,compare}_evidence_7f.json "$RUN_OUT/"
+cp -f "$PROJ/analysis/"{eda,influencer_node,compare}_evidence.json "$RUN_OUT/"
 { echo "run_tag=$RUN_TAG"; echo "host=$(hostname)"; echo "date=$(date)";
   echo "baseline=$BASELINE"; echo "influencer=$INFLUENCER"; } > "$RUN_OUT/run_info.txt"
-# make_figures.py writes every figure whose inputs are present into $RUN_OUT/figures_7factor/;
+# make_figures.py writes every figure whose inputs are present into $RUN_OUT/figures/;
 # failure is non-fatal because the JSONs are already archived.
 python "$PROJ/analysis/make_figures.py" "$RUN_OUT" || echo "WARN: make_figures.py failed; JSONs are archived in $RUN_OUT"
 
 echo "done=$(date)"
-echo "Run archive (3 JSONs + figures_7factor/ + run_info.txt): $RUN_OUT/"
-echo "Latest canonical evidence: $PROJ/analysis/{eda,influencer_node,compare}_evidence_7f.json"
+echo "Run archive (3 JSONs + figures/ + run_info.txt): $RUN_OUT/"
+echo "Latest canonical evidence: $PROJ/analysis/{eda,influencer_node,compare}_evidence.json"
 
 # Not part of this job: the data-independent identification check.
 #   module load EESSI/2025.06 && module load Julia/1.12.2

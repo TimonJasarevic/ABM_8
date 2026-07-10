@@ -5,16 +5,17 @@
 # on ONE full Genoa node (192 cores / 384 GiB), shared-memory multithreaded.
 #
 # ---- ONE-TIME SETUP (run on a LOGIN node, once) -----------------------------
-#   1. Copy the model + project to your home, e.g.:
-#        ~/fake-news-percolation/run_experiment_influencers.jl
+#   1. Copy the model and project files to the home directory, e.g.:
+#        ~/fake-news-percolation/run_experiment_baseline.jl
 #        ~/fake-news-percolation/Project.toml      (optional; created by step 3)
-#        ~/fake-news-percolation/run_snellius.sh   (this file)
+#        ~/fake-news-percolation/run_snellius_baseline.sh   (this file)
 #        ~/fake-news-percolation/sobol/            (scripts + design.csv from step 1b)
 #   1b. The Julia runner READS sobol/design.csv (the SALib Saltelli design). Generate it
-#       once with Python + SALib (e.g. locally in the `ABM` conda env, then copy sobol/):
+#       once with Python + SALib, e.g. locally in the Sobol-SA environment (numpy<2, see
+#       requirements.txt), then copy sobol/:
 #          python sobol/make_design.py --N 1024     # -> sobol/design.csv (+ problem.json)
 #       It is small and deterministic (seed=42), so no Python is needed on the node.
-#   2. Make Julia available. CONFIRM what your Snellius offers first:
+#   2. Make Julia available. Confirm which modules Snellius offers first:
 #        module avail Julia
 #      then pick ONE of the options in the "Julia environment" block below.
 #   3. Install the dependencies into the project ONCE (login node has internet):
@@ -23,7 +24,7 @@
 #          "StatsBase","ProgressMeter","DataFrames","Arrow","DelimitedFiles"]); Pkg.precompile()'
 #      (Random, Statistics, Dates are stdlib; DelimitedFiles is a bundled stdlib on
 #       Julia 1.12.x but is declared here so the project stays self-contained.)
-#   4. Submit:   sbatch run_snellius.sh <true> if per-node/edge/cascade files should be written (~83GB)
+#   4. Submit:   sbatch run_snellius_baseline.sh <true> if per-node/edge/cascade files should be written (~83GB)
 #      Monitor:  squeue -u $USER       Log: slurm-<jobid>.out
 #
 # ---- COST / RUNTIME (estimate) ----------------------------------------------
@@ -35,7 +36,7 @@
 # =============================================================================
 
 #SBATCH --job-name=deepfake_baseline
-# Genoa thin node = 192 cores / 384 GiB; take the whole node (exclusive) for max RAM.
+# Genoa thin node = 192 cores / 384 GiB; take the whole node (exclusive) for maximum RAM.
 #SBATCH --partition=genoa
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -77,7 +78,7 @@ cd "$RUN_DIR"                        # output -> $RUN_DIR/data/sweep_<timestamp>
 
 # WRITE_FULL: enable the heavy per-cascade/node/edge Arrow files. Accept it from a positional
 # arg ($1, always delivered to the job script) or the environment, and export it so the julia
-# child sees it. Robust submit forms:  `sbatch run_snellius.sh true`  or  `WRITE_FULL=true sbatch run_snellius.sh`.
+# child sees it. Robust submit forms:  `sbatch run_snellius_baseline.sh true`  or  `WRITE_FULL=true sbatch run_snellius_baseline.sh`.
 export WRITE_FULL="${1:-${WRITE_FULL:-false}}"
 echo "WRITE_FULL (job script) = '$WRITE_FULL'"
 
