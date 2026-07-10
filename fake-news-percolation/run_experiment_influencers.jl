@@ -1,4 +1,4 @@
-# deepfake_percolation.jl
+# run_experiment_influencers.jl
 using Graphs
 using DataStructures
 using StatsBase
@@ -25,10 +25,10 @@ Base.@kwdef struct SimConfig
     prior_min::Float64 = 0.3
     prior_max::Float64 = 0.7
     prior_strength::Float64 = 2.0
-    rationality::Float64 = 1.0   # softmax (logit) precision λ; λ→∞ ⇒ argmax, λ→0 ⇒ random
-    loss_aversion::Float64 = 1.0  # prospect-theory loss-aversion coeff λ_LA (linear, α=β=1); swept via
+    rationality::Float64 = 1.0   # softmax (logit) precision λ; λ -> ∞ recovers argmax, λ -> 0 gives random choice
+    loss_aversion::Float64 = 1.0  # prospect-theory loss-aversion coefficient λ_LA (linear, α=β=1); swept via
                                   # the Saltelli design (col 7). Scales the reputational LOSS only in
-                                  # decide(); 1.0 ⇒ loss-neutral (recovers prior model). Reference = DISCARD = 0
+                                  # decide(); 1.0 means loss-neutral (recovers the prior model). Reference = DISCARD = 0
 end
 
 mutable struct BetaDist
@@ -50,9 +50,9 @@ module AgentLogic
     function decide(p_true::Float64, reach::Int, est_tpr::Float64, est_fpr::Float64, cfg::SimConfig, rng)
         k = Float64(reach)
         # prospect-theory loss aversion: the reputational LOSS from sharing fake news is
-        # weighted ×ℓ (linear value function, α=β=1; reference = DISCARD = 0). The
-        # verification cost is an objective effort cost and is NOT scaled. ℓ=1 ⇒ loss-neutral.
-        # This biases the PERCEIVED decision utility only — realized payoffs/welfare
+        # weighted by ℓ (linear value function, α=β=1; reference = DISCARD = 0). The
+        # verification cost is an objective effort cost and is NOT scaled. ℓ=1 is loss-neutral.
+        # This biases the PERCEIVED decision utility only; realized payoffs/welfare
         # elsewhere still use the true rep_gain/rep_loss.
         ℓ = cfg.loss_aversion
         u_share_if_true = cfg.rep_gain * k
@@ -62,7 +62,7 @@ module AgentLogic
         eu_given_fake = (1.0 - est_tpr) * (-ℓ * cfg.rep_loss * k)
         u_verify = -cfg.verification_cost + (p_true * eu_given_real) + ((1.0 - p_true) * eu_given_fake)
         # bounded rationality: softmax (logit quantal response) over the three action utilities
-        # (DISCARD utility = 0). λ→∞ recovers the old argmax; λ→0 → uniform random choice.
+        # (DISCARD utility = 0). λ -> ∞ recovers argmax; λ -> 0 gives uniform random choice.
         λ = cfg.rationality
         u_max = max(u_share, u_verify, 0.0)
         w_share   = exp(λ * (u_share  - u_max))
@@ -374,19 +374,23 @@ function _apply_updates!(sim::Simulation, actions_log, verification_log, visited
 end
 
 # sweep and export logic
-# The design now comes from a SALib Saltelli sample (sobol/make_design.py); the old
-# internal latin_hypercube_sample was removed since Sobol indices require a Saltelli
+# The design comes from a SALib Saltelli sample (sobol/make_design.py); the former
+# internal latin_hypercube_sample was removed because Sobol indices require a Saltelli
 # design, not LHS.
 
 # sen_welfare per simulation, computed in Julia from in-memory payoffs so the SA
 # needs no node-level export (matches Python utils.py: agent_veracity + Sen welfare).
-function _gini(x::AbstractVector{Float64})
+# RSV renormalised Gini (Raffinetti, Siletti & Vernizzi 2015) on the signed values,
+# matching Python utils.py gini_negatives; reduces to the classical Gini when all
+# values are non-negative.
+function _gini_rsv(x::AbstractVector{Float64})
     n = length(x)
     n == 0 && return 0.0
     xs = sort(x)
-    total = sum(xs)
-    total <= 0.0 && return 0.0
-    return (2.0 * sum((1:n) .* xs)) / (n * total) - (n + 1.0) / n
+    abs_total = sum(abs, xs)
+    abs_total == 0.0 && return 0.0
+    g_num = 2.0 * sum((1:n) .* xs) - (n + 1.0) * sum(xs)
+    return g_num / (n * abs_total)
 end
 
 function _agent_veracity(payoff::Float64, best::Float64, worst::Float64)
@@ -399,7 +403,7 @@ function _agent_veracity(payoff::Float64, best::Float64, worst::Float64)
     end
 end
 
-_sen_welfare(x::AbstractVector{Float64}) = isempty(x) ? 0.0 : mean(x) * (1.0 - _gini(x .- minimum(x)))
+_sen_welfare(x::AbstractVector{Float64}) = isempty(x) ? 0.0 : mean(x) * (1.0 - _gini_rsv(x))
 
 # Structural virality (Goel et al. 2016): mean pairwise shortest-path distance in the diffusion
 # tree, g(T) = (1/(n(n-1))) * sum_{i,j} d(i,j). Computed in O(n) on the rooted tree via the edge-
@@ -510,7 +514,7 @@ function run_sobol_sweep(; design_path::String="sobol/design.csv", num_reps::Int
         cost, loss = design[design_id, 1], design[design_id, 2]
         tpr, fpr   = design[design_id, 3], design[design_id, 4]
         prev       = design[design_id, 5]
-        rat        = 10.0 ^ design[design_id, 6]   # back-transform log10(λ) → λ
+        rat        = 10.0 ^ design[design_id, 6]   # back-transform log10(λ) -> λ
         loss_av    = design[design_id, 7]          # loss-aversion λ_LA (linear; 1.0 = loss-neutral)
 
         thread_seed = Int(mod(hash((design_id, rep_id, RNG_NUMBER)), typemax(Int)))     
