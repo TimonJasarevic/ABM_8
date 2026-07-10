@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
 """Sobol sensitivity analysis (Approach IV) for the deepfake-percolation Saltelli sweep.
 
-Per Saltelli design point we have R stochastic replicates of each scalar output.
+Each Saltelli design point provides R stochastic replicates of each scalar output.
 Following the law of total variance (Carmona-Cabrero et al. 2024, JASSS 27(1):16):
 
     Var(Y) = Var_X(E[Y|X])      (deterministic / structural)
            + E_X(Var[Y|X])      (stochastic)
 
-we compute, per output, SEPARATE Sobol decompositions:
+SEPARATE Sobol decompositions are computed per output:
   - deterministic indices: sobol.analyze on the per-point replicate MEANS  m_i
     -> decomposes Var_X(E[Y|X]) : which factors drive the expected outcome.
   - stochastic   indices: sobol.analyze on the per-point replicate VARIANCES s_i^2
-    -> decomposes Var_X(Var[Y|X]) : which factors drive the model's noisiness.
+    -> decomposes Var_X(Var[Y|X]) : which factors drive the model's stochastic variability.
 plus the global stochastic fraction E_X(Var[Y|X]) / Var(Y) (bias-corrected).
 
 Each analysis reports S1, ST and S2 with bootstrap CIs (SALib uses the never-negative
 Jansen estimator for ST). All outputs (including sen_welfare, computed in the Julia
-runner) come from simulations.csv, so this runs in conda env `ABM` with no pyarrow.
+runner) come from simulations.csv, so this runs in the Sobol-SA environment
+(numpy<2, see requirements.txt) with no pyarrow.
 
-    conda run -n ABM python sobol/analyze.py
+Some older sweeps store a superseded min-shift-Gini sen_welfare in
+simulations.csv; pass --welfare-npz analysis/runs/nodecache_*/acc_nodes_<arm>.npz to
+override the column with the RSV values (utils.py sen_welfare) streamed from that
+sweep's nodes.arrow. Sweeps from the current runners are RSV-native and need no flag.
+
+    python sobol/analyze.py  (run in the Sobol-SA environment)
 """
 import argparse
 import json
@@ -73,6 +79,8 @@ def latest_sweep() -> Path:
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sweep", default=None, help="a data/sweep_* dir (default: latest)")
+    ap.add_argument("--welfare-npz", default=None,
+                    help="acc_nodes_<arm>.npz whose RSV sen_welfare replaces the sweep's column")
     ap.add_argument("--problem", default="sobol/problem.json")
     ap.add_argument("--out", default="sobol/results")
     ap.add_argument("--nboot", type=int, default=1000, help="bootstrap resamples for CIs")
@@ -85,6 +93,22 @@ def main():
 
     sweep = Path(args.sweep) if args.sweep else latest_sweep()
     sim = pd.read_csv(sweep / "simulations.csv")
+
+    if args.welfare_npz:
+        c = np.load(args.welfare_npz)
+        gsid, sw = c["gsid"], c["sen_welfare"]
+        if not np.array_equal(gsid, np.arange(1, len(gsid) + 1)):
+            raise SystemExit(f"{args.welfare_npz}: gsid is not 1..{len(gsid)}")
+        if not np.isfinite(sw).all():
+            raise SystemExit(f"{args.welfare_npz}: sen_welfare has non-finite values")
+        ids = sim["global_sim_id"].to_numpy()
+        if ids.min() < 1 or ids.max() > len(sw):
+            raise SystemExit(f"{args.welfare_npz}: covers gsid 1..{len(sw)}, "
+                             f"sweep has {ids.min()}..{ids.max()}")
+        old_mean = float(sim["sen_welfare"].mean())
+        sim["sen_welfare"] = sw[ids - 1]
+        print(f"sen_welfare overridden from {args.welfare_npz}: "
+              f"mean {old_mean:.4f} -> {float(sim['sen_welfare'].mean()):.4f}")
 
     # Per design point, in design_id order: replicate mean, sample variance, count.
     g = sim.groupby("design_id")
@@ -103,7 +127,7 @@ def main():
     if R < 2:
         raise SystemExit("Approach IV needs R >= 2 replicates per design point to estimate within-point variance.")
 
-    # The guards above check shape only. Verify the sweep's per-point factor values actually
+    # The guards above check shape only. Verify that the sweep's per-point factor values
     # match the current design.csv: a same-shaped but different/stale design (e.g. a re-run of
     # make_design.py with a different --seed) otherwise passes silently and is analysed against
     # the wrong Saltelli ordering. The factor values are constant within a design_id.
@@ -169,7 +193,7 @@ def main():
 
 
 def _label_from_dir(out_dir: Path) -> str:
-    """Config label for the figure filename, derived from the results dir name."""
+    """Configuration label for the figure filename, derived from the results directory name."""
     name = out_dir.name
     return name.split("_sv")[0] if "_sv" in name else name
 
@@ -222,7 +246,7 @@ def plot_dotgrid(df: pd.DataFrame, out_dir: Path, component: str) -> None:
     if component == "deterministic":
         ax.set_ylim(-0.10, 1.05)
     else:
-        # Stochastic CIs are much wider; fit the axis so error bars aren't clipped.
+        # Stochastic CIs are much wider; fit the axis so that error bars are not clipped.
         lo = min(0.0, float((sub["S1"] - sub["S1_conf"]).min()))
         hi = float(max((sub["ST"] + sub["ST_conf"]).max(), (sub["S1"] + sub["S1_conf"]).max()))
         pad = 0.05 * (hi - lo)
