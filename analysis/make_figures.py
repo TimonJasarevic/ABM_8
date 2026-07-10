@@ -64,6 +64,8 @@ def _load(fname, d=DATA):
 def _load_sims():
     p = os.path.join(BASELINE_SWEEP, "simulations.csv")
     if not os.path.exists(p):
+        p += ".gz"          # bundled sweeps ship gzipped; pd.read_csv decompresses by extension
+    if not os.path.exists(p):
         return None
     return pd.read_csv(p, usecols=["p_fake", "avg_fake_cascade", "avg_true_cascade",
                                    "veracity_differential", "avg_verify_rate"])

@@ -6,7 +6,7 @@ points lie within 5% of it. This script recomputes the headline seeding comparis
 design and with those near-edge design points excluded, so the manuscript can state that the
 results do not hinge on the boundary region.
 
-Writes analysis/runs/loss_edge_2026_07_03/loss_edge_evidence.json with `full` and `excluded`
+Writes analysis/runs/loss_edge/loss_edge_evidence.json with `full` and `excluded`
 blocks (ignition means and d_av, fake-reach means and d_av, design-point-clustered TOST).
 
 Usage:  python analysis/robustness/loss_edge_check.py
@@ -29,7 +29,7 @@ from utils import cohens_d_av, tost_clustered
 BASE_CSV = data_io.BASELINE_SVD_CSV
 INFL_CSV = data_io.INFLUENCER_SVD_CSV
 DESIGN = data_io.DESIGN_CSV
-OUT = os.path.join(data_io.RUNS_DIR, "loss_edge_2026_07_03")
+OUT = os.path.join(data_io.RUNS_DIR, "loss_edge")
 
 EDGE = 1.05
 SESOI, ALPHA = data_io.SESOI, 0.05

@@ -20,7 +20,7 @@ runner) come from simulations.csv, so this runs in the Sobol-SA environment
 (numpy<2, see requirements.txt) with no pyarrow.
 
 Some older sweeps store a superseded min-shift-Gini sen_welfare in
-simulations.csv; pass --welfare-npz analysis/runs/nodecache_*/acc_nodes_<arm>.npz to
+simulations.csv; pass --welfare-npz analysis/runs/nodecache/acc_nodes_<arm>.npz to
 override the column with the RSV values (utils.py sen_welfare) streamed from that
 sweep's nodes.arrow. Sweeps from the current runners are RSV-native and need no flag.
 
@@ -92,7 +92,10 @@ def main():
     n_rows = meta["n_rows"]
 
     sweep = Path(args.sweep) if args.sweep else latest_sweep()
-    sim = pd.read_csv(sweep / "simulations.csv")
+    sim_csv = sweep / "simulations.csv"
+    if not sim_csv.exists():
+        sim_csv = sweep / "simulations.csv.gz"   # bundled sweeps ship gzipped
+    sim = pd.read_csv(sim_csv)
 
     if args.welfare_npz:
         c = np.load(args.welfare_npz)
@@ -139,7 +142,7 @@ def main():
     want = design[problem["names"]].to_numpy()
     if got.shape != want.shape or not np.allclose(got, want, rtol=1e-6, atol=1e-9):
         raise SystemExit(
-            f"Sweep/design mismatch: per-point factor values in {sweep / 'simulations.csv'} do not "
+            f"Sweep/design mismatch: per-point factor values in {sim_csv} do not "
             f"match {design_path}. Was this sweep run from the current design?"
         )
 

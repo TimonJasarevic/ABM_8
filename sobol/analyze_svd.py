@@ -10,7 +10,7 @@ with no spreading cascade have undefined conditional virality; the design-point 
 mean skips those NaNs (their count is reported by sv_decomposition.py).
 
 Usage (run in the Sobol-SA environment, numpy<2, see requirements.txt):
-  python sobol/analyze_svd.py --sweep data/sweep_2026_06_27_1641_baseline_svd \
+  python sobol/analyze_svd.py --sweep data/baseline_svd \
       --problem sobol/problem.json --out sobol/results/baseline_svd_<date>
 """
 import os

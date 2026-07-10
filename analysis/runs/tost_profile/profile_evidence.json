@@ -1,0 +1,251 @@
+{
+ "generated_for": "Tier B-15, POSITIONING_REVIEW_2026-07-02",
+ "inputs": [
+  "C:\\Users\\marco\\Documents\\UvA\\ABM\\project\\fake-news-percolation\\data\\sweep_2026_06_27_1641_baseline_sv\\simulations.csv",
+  "C:\\Users\\marco\\Documents\\UvA\\ABM\\project\\fake-news-percolation\\data\\sweep_2026_06_27_1633_influencer_sv\\simulations.csv"
+ ],
+ "metric": "avg_fake_cascade (fake-news reach, fraction of network)",
+ "alpha": 0.05,
+ "sesoi": 0.05,
+ "overall": {
+  "n_clusters": 16384,
+  "mean_diff": 0.0026156943692741226,
+  "se_clustered": 0.000398244530894534,
+  "ci90_clustered": [
+   0.001960603365720114,
+   0.0032707853728281312
+  ],
+  "p_tost": 0.0,
+  "equivalent": true,
+  "smallest_passing_sesoi": 0.0032707853728281312
+ },
+ "pfake_bins": [
+  {
+   "n_clusters": 1816,
+   "mean_diff": 0.04993289833067283,
+   "se_clustered": 0.002079809256816719,
+   "ci90_clustered": [
+    0.04651016954654172,
+    0.05335562711480395
+   ],
+   "p_tost": 0.4871327813069626,
+   "equivalent": false,
+   "smallest_passing_sesoi": 0.05335562711480395,
+   "bin": "(0.05, 0.15]",
+   "midpoint": 0.0995,
+   "base_reach_mean": 0.6430333627927539
+  },
+  {
+   "n_clusters": 1824,
+   "mean_diff": 0.027671832308883416,
+   "se_clustered": 0.0014526573505496455,
+   "ci90_clustered": [
+    0.02528120876081618,
+    0.03006245585695065
+   ],
+   "p_tost": 1.5819666977092241e-50,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.03006245585695065,
+   "bin": "(0.15, 0.25]",
+   "midpoint": 0.2,
+   "base_reach_mean": 0.47186070576463957
+  },
+  {
+   "n_clusters": 1816,
+   "mean_diff": 0.007981174052723274,
+   "se_clustered": 0.0011435004760647427,
+   "ci90_clustered": [
+    0.00609932263713486,
+    0.009863025468311687
+   ],
+   "p_tost": 9.246739893580067e-222,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.009863025468311687,
+   "bin": "(0.25, 0.35]",
+   "midpoint": 0.3,
+   "base_reach_mean": 0.32303915061078786
+  },
+  {
+   "n_clusters": 1824,
+   "mean_diff": -0.007857059184628425,
+   "se_clustered": 0.001051160478130727,
+   "ci90_clustered": [
+    -0.009586943379869725,
+    -0.006127174989387125
+   ],
+   "p_tost": 7.592173283746043e-253,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.009586943379869725,
+   "bin": "(0.35, 0.45]",
+   "midpoint": 0.4,
+   "base_reach_mean": 0.2175087092717008
+  },
+  {
+   "n_clusters": 1816,
+   "mean_diff": -0.016799399718950343,
+   "se_clustered": 0.000920632631229239,
+   "ci90_clustered": [
+    -0.018314478948543544,
+    -0.015284320489357142
+   ],
+   "p_tost": 1.6276436211209103e-215,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.018314478948543544,
+   "bin": "(0.45, 0.55]",
+   "midpoint": 0.5,
+   "base_reach_mean": 0.1495613220026465
+  },
+  {
+   "n_clusters": 1832,
+   "mean_diff": -0.015744491995593,
+   "se_clustered": 0.0006971059003397358,
+   "ci90_clustered": [
+    -0.01689170959525216,
+    -0.014597274395933838
+   ],
+   "p_tost": 0.0,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.01689170959525216,
+   "bin": "(0.55, 0.65]",
+   "midpoint": 0.6000000000000001,
+   "base_reach_mean": 0.09684874080715387
+  },
+  {
+   "n_clusters": 1808,
+   "mean_diff": -0.013345095070917285,
+   "se_clustered": 0.0005588267184513147,
+   "ci90_clustered": [
+    -0.014264754704452596,
+    -0.012425435437381975
+   ],
+   "p_tost": 0.0,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.014264754704452596,
+   "bin": "(0.65, 0.75]",
+   "midpoint": 0.7,
+   "base_reach_mean": 0.06361318412301104
+  },
+  {
+   "n_clusters": 1824,
+   "mean_diff": -0.0056295415446195865,
+   "se_clustered": 0.0003285534299417769,
+   "ci90_clustered": [
+    -0.0061702386099804435,
+    -0.005088844479258729
+   ],
+   "p_tost": 0.0,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.0061702386099804435,
+   "bin": "(0.75, 0.85]",
+   "midpoint": 0.8,
+   "base_reach_mean": 0.039188665285782416
+  },
+  {
+   "n_clusters": 1824,
+   "mean_diff": -0.0025826371653269974,
+   "se_clustered": 0.00018237625077123124,
+   "ci90_clustered": [
+    -0.0028827719214943436,
+    -0.002282502409159651
+   ],
+   "p_tost": 0.0,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.0028827719214943436,
+   "bin": "(0.85, 0.95]",
+   "midpoint": 0.8999999999999999,
+   "base_reach_mean": 0.026373530348058047
+  }
+ ],
+ "pfake_slices": {
+  "p_fake<=0.15": {
+   "n_clusters": 1816,
+   "mean_diff": 0.04993289833067283,
+   "se_clustered": 0.002079809256816719,
+   "ci90_clustered": [
+    0.04651016954654172,
+    0.05335562711480395
+   ],
+   "p_tost": 0.4871327813069626,
+   "equivalent": false,
+   "smallest_passing_sesoi": 0.05335562711480395,
+   "base_reach_mean": 0.6430333627927539
+  },
+  "p_fake<=0.3": {
+   "n_clusters": 4560,
+   "mean_diff": 0.03325630109828821,
+   "se_clustered": 0.0010872583758747272,
+   "ci90_clustered": [
+    0.03146755674315017,
+    0.03504504545342626
+   ],
+   "p_tost": 1.6564085771611396e-52,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.03504504545342626,
+   "base_reach_mean": 0.5158247176271387
+  }
+ },
+ "lambda_bins": [
+  {
+   "n_clusters": 4096,
+   "mean_diff": 0.017165233396681343,
+   "se_clustered": 0.0006113673346462534,
+   "ci90_clustered": [
+    0.016159396074383568,
+    0.018171070718979117
+   ],
+   "p_tost": 0.0,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.018171070718979117,
+   "bin": "(-2, -1]",
+   "midpoint": -1.5005
+  },
+  {
+   "n_clusters": 4096,
+   "mean_diff": -0.001832166501547416,
+   "se_clustered": 0.001027813227765634,
+   "ci90_clustered": [
+    -0.0035231513583621754,
+    -0.00014118164473265657
+   ],
+   "p_tost": 0.0,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.0035231513583621754,
+   "bin": "(-1, 0]",
+   "midpoint": -0.5
+  },
+  {
+   "n_clusters": 4096,
+   "mean_diff": -0.0028456333150833867,
+   "se_clustered": 0.0007785591800012232,
+   "ci90_clustered": [
+    -0.004126538977660037,
+    -0.0015647276525067365
+   ],
+   "p_tost": 0.0,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.004126538977660037,
+   "bin": "(0, 1]",
+   "midpoint": 0.5
+  },
+  {
+   "n_clusters": 4096,
+   "mean_diff": -0.0020246561029540534,
+   "se_clustered": 0.0006577629451116286,
+   "ci90_clustered": [
+    -0.0031068246813596868,
+    -0.0009424875245484198
+   ],
+   "p_tost": 0.0,
+   "equivalent": true,
+   "smallest_passing_sesoi": 0.0031068246813596868,
+   "bin": "(1, 2]",
+   "midpoint": 1.5
+  }
+ ],
+ "all_bins_equivalent": false,
+ "low_pfake_equivalent": false,
+ "max_abs_bin_diff": [
+  0.04993289833067283,
+  "(0.05, 0.15]"
+ ]
+}

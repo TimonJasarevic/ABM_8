@@ -1,0 +1,39 @@
+{
+ "generated_for": "Tier A-5 (W10), POSITIONING_REVIEW_2026-07-02",
+ "inputs": [
+  "C:\\Users\\marco\\Documents\\UvA\\ABM\\project\\fake-news-percolation\\data\\sweep_2026_06_27_1641_baseline_sv\\simulations.csv",
+  "C:\\Users\\marco\\Documents\\UvA\\ABM\\project\\fake-news-percolation\\data\\sweep_2026_06_27_1633_influencer_sv\\simulations.csv"
+ ],
+ "metric": "avg_fake_cascade (fake-news reach, fraction of network)",
+ "n_pairs": 491520,
+ "n_clusters": 16384,
+ "reps_per_cluster": 30,
+ "mean_baseline": 0.22555089312824445,
+ "mean_influencer": 0.22816658749751859,
+ "mean_diff": 0.0026156943692741226,
+ "se_clustered": 0.000398244530894534,
+ "se_naive": 0.00010561423311846181,
+ "design_effect": 14.218531381771093,
+ "icc_estimate": 0.4558114269576239,
+ "alpha": 0.05,
+ "sesoi": 0.05,
+ "sesoi_justification": "0.05 of the network = 5 percentage points of reach, about 22% of the baseline fake reach 0.226; the smallest displacement of fake-news reach regarded as policy relevant at N=300",
+ "ci90_clustered": [
+  0.001960603365720114,
+  0.0032707853728281312
+ ],
+ "ci95_clustered": [
+  0.0018350917613726941,
+  0.003396296977175551
+ ],
+ "ci90_naive": [
+  0.002441974087453833,
+  0.002789414651094412
+ ],
+ "p_tost": 0.0,
+ "p_lower": 0.0,
+ "p_upper": 0.0,
+ "equivalent": true,
+ "smallest_passing_sesoi": 0.0032707853728281312,
+ "unit_of_analysis": "per-design-point mean differences (one-sample t, df=16383); equals cluster-robust SE under the balanced design"
+}

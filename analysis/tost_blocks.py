@@ -19,9 +19,9 @@ estimates. The block-cell-mean t is reported per bin as a sensitivity. Benjamini
 q-values are attached over the family of all fifteen reported TOSTs (primary) and over the
 nine prevalence bins alone (secondary).
 
-Writes analysis/runs/tost_blocks_2026_07_04/{tost_blocks_evidence.json,
+Writes analysis/runs/tost_blocks/{tost_blocks_evidence.json,
 fake_reach_equivalence_blocks.png, fake_reach_profile_blocks.png}. Supersedes the earlier
-design-point runs (tost_clustered_2026_07_03, tost_profile_2026_07_03), whose values are
+design-point runs (tost_clustered, tost_profile), whose values are
 embedded per entry for comparison.
 
 Usage: python analysis/tost_blocks.py, run in the main analysis environment
@@ -47,9 +47,9 @@ INFL_CSV = data_io.INFLUENCER_SVD_CSV
 BASE_CSV_PLAIN = os.path.join(data_io.BASELINE_SWEEP, "simulations.csv")
 INFL_CSV_PLAIN = os.path.join(data_io.INFLUENCER_SWEEP, "simulations.csv")
 DESIGN_CSV = data_io.DESIGN_CSV
-OLD_TOST_JSON = os.path.join(data_io.RUNS_DIR, "tost_clustered_2026_07_03", "tost_evidence.json")
-OLD_PROFILE_JSON = os.path.join(data_io.RUNS_DIR, "tost_profile_2026_07_03", "profile_evidence.json")
-OUT = os.path.join(data_io.RUNS_DIR, "tost_blocks_2026_07_04")
+OLD_TOST_JSON = os.path.join(data_io.RUNS_DIR, "tost_clustered", "tost_evidence.json")
+OLD_PROFILE_JSON = os.path.join(data_io.RUNS_DIR, "tost_profile", "profile_evidence.json")
+OUT = os.path.join(data_io.RUNS_DIR, "tost_blocks")
 
 COLS = ["global_sim_id", "design_id", "rep_id", "p_fake", "rationality", "avg_fake_cascade"]
 SESOI, ALPHA = data_io.SESOI, 0.05

@@ -22,11 +22,11 @@ meaningless, so inference rides on the per-simulation paired statistics.
 
 Usage (the main analysis environment, see requirements.txt; stream the two seeding
 configurations in parallel processes, then reduce):
-  python analysis/sv_decomposition.py stream --sweep data/sweep_2026_06_27_1641_baseline   --label baseline   --out analysis/runs/svdecomp_2026_07_09
-  python analysis/sv_decomposition.py stream --sweep data/sweep_2026_06_27_1633_influencer --label influencer --out analysis/runs/svdecomp_2026_07_09
-  python analysis/sv_decomposition.py reduce --out analysis/runs/svdecomp_2026_07_09 \
-      --baseline-csv data/sweep_2026_06_27_1641_baseline_svd/simulations.csv \
-      --influencer-csv data/sweep_2026_06_27_1633_influencer_svd/simulations.csv \
+  python analysis/sv_decomposition.py stream --sweep data/sweep_<ts>_baseline   --label baseline   --out analysis/runs/svdecomp
+  python analysis/sv_decomposition.py stream --sweep data/sweep_<ts>_influencer --label influencer --out analysis/runs/svdecomp
+  python analysis/sv_decomposition.py reduce --out analysis/runs/svdecomp \
+      --baseline-csv data/baseline_svd/simulations.csv.gz \
+      --influencer-csv data/influencer_svd/simulations.csv.gz \
       [--write-sobol-csv]
 ``stream --max-rows N`` exists only for the smoke gate; ``reduce`` refuses partial streams.
 """

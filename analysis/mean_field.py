@@ -36,8 +36,8 @@ channel.
 
 Reads the paired per-simulation sweep CSVs (all 16,384 design points x 30 reps per
 configuration; no sampling) and writes
-  runs/mean_field_2026_07_09/mean_field_evidence.json   (summary + binned profiles)
-  runs/mean_field_2026_07_09/mf_points.npz              (per-design-point arrays for
+  runs/mean_field/mean_field_evidence.json   (summary + binned profiles)
+  runs/mean_field/mf_points.npz              (per-design-point arrays for
                                                          make_figures.py)
 
 Usage: python analysis/mean_field.py, run in the main analysis environment

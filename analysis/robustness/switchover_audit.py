@@ -20,9 +20,9 @@ True-cascade accumulators ride along as a second reconstruction gate and symmetr
 
 Usage (the main analysis environment, see requirements.txt; stream the two seeding
 configurations SEQUENTIALLY, then reduce):
-  python analysis/robustness/switchover_audit.py stream --sweep data/sweep_2026_06_27_1641_baseline   --label baseline   --out analysis/runs/switchover_audit_2026_07_04
-  python analysis/robustness/switchover_audit.py stream --sweep data/sweep_2026_06_27_1633_influencer --label influencer --out analysis/runs/switchover_audit_2026_07_04
-  python analysis/robustness/switchover_audit.py reduce --out analysis/runs/switchover_audit_2026_07_04
+  python analysis/robustness/switchover_audit.py stream --sweep data/sweep_<ts>_baseline   --label baseline   --out analysis/runs/switchover_audit
+  python analysis/robustness/switchover_audit.py stream --sweep data/sweep_<ts>_influencer --label influencer --out analysis/runs/switchover_audit
+  python analysis/robustness/switchover_audit.py reduce --out analysis/runs/switchover_audit
 ``stream --max-rows N`` exists only for the smoke gate; ``reduce`` refuses partial streams.
 A complete acc_switchover_{label}.npz is never re-streamed unless --force is given.
 """
@@ -217,7 +217,7 @@ def cmd_reduce(args):
     assert np.array_equal(dp_b.index.values, dp_i.index.values)
     assert np.allclose(dp_b["p_fake"].values, dp_i["p_fake"].values)
 
-    with open(os.path.join(data_io.RUNS_DIR, "tost_profile_2026_07_03",
+    with open(os.path.join(data_io.RUNS_DIR, "tost_profile",
                            "profile_evidence.json")) as f:
         old_profile = json.load(f)
     old_bins = {s["bin"]: s for s in old_profile["pfake_bins"]}

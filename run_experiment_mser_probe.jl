@@ -10,7 +10,7 @@
 # analysis/replication_justification.py -> utils.mser5.
 #
 # Run:  julia --project=. -t auto run_experiment_mser_probe.jl
-# Out:  analysis/runs/mser_probe_2026_07_09/{mser_probe_cascades.csv, probe_config.json}
+# Out:  analysis/runs/mser_probe/{mser_probe_cascades.csv, probe_config.json}
 
 _INCLUDED_AS_MODULE = true
 include(joinpath(@__DIR__, "run_experiment_baseline.jl"))
@@ -18,7 +18,7 @@ include(joinpath(@__DIR__, "run_experiment_baseline.jl"))
 using DelimitedFiles: readdlm
 using Printf
 
-const PROBE_OUT = joinpath(@__DIR__, "analysis", "runs", "mser_probe_2026_07_09")
+const PROBE_OUT = joinpath(@__DIR__, "analysis", "runs", "mser_probe")
 const PROBE_REPS = 30
 const PROBE_CASCADES = 2000
 const PROBE_BURN_IN = 1000          # mirrors the production loop split; logging ignores it

@@ -1,7 +1,7 @@
 """Post-hoc justification numbers for the replication count, the burn-in length, and the Sen
 negative-mean regime.
 
-Three blocks -> runs/replication_justification_2026_07_09/replication_evidence.json:
+Three blocks -> runs/replication_justification/replication_evidence.json:
   mser5             MSER-5 warm-up truncation (Hoad et al. 2010 family) on replicate-averaged
                     per-cascade-index series from the dedicated 2000-cascade probe
                     (run_experiment_mser_probe.jl; the production sweeps never log the burn-in).
@@ -23,8 +23,8 @@ sys.path.insert(0, os.path.join(HERE, "lib"))
 import data_io
 import utils
 
-PROBE_DIR = os.path.join(HERE, "runs", "mser_probe_2026_07_09")
-OUT_DIR = os.path.join(HERE, "runs", "replication_justification_2026_07_09")
+PROBE_DIR = os.path.join(HERE, "runs", "mser_probe")
+OUT_DIR = os.path.join(HERE, "runs", "replication_justification")
 CACHE_DIR = data_io.NODECACHE_DIR
 BURN_IN_USED = 1000
 N_AGENTS = data_io.N_NODES

@@ -20,19 +20,19 @@ DESIGN_CSV = os.path.join(SOBOL_DIR, "design.csv")
 
 # Latest run dirs holding the evidence that make_figures.py renders the structural-virality,
 # equivalence, and switchover figures from (sv_decomposition.py / tost_blocks.py / switchover_audit.py).
-SVDECOMP_DIR = os.path.join(RUNS_DIR, "svdecomp_2026_07_09")
-TOST_DIR = os.path.join(RUNS_DIR, "tost_blocks_2026_07_04")
-SWITCHOVER_DIR = os.path.join(RUNS_DIR, "switchover_audit_2026_07_04")
-MEANFIELD_DIR = os.path.join(RUNS_DIR, "mean_field_2026_07_09")
+SVDECOMP_DIR = os.path.join(RUNS_DIR, "svdecomp")
+TOST_DIR = os.path.join(RUNS_DIR, "tost_blocks")
+SWITCHOVER_DIR = os.path.join(RUNS_DIR, "switchover_audit")
+MEANFIELD_DIR = os.path.join(RUNS_DIR, "mean_field")
 # The streamed per-sim node/cascade cache that build_evidence.py reduces from by default.
-NODECACHE_DIR = os.path.join(RUNS_DIR, "nodecache_2026_07_08")
+NODECACHE_DIR = os.path.join(RUNS_DIR, "nodecache")
 
 # The two paired sweeps (uniform-random vs top-degree hub seeding); identical Saltelli
 # design and per-simulation seeds, so simulations match one-to-one on global_sim_id.
-BASELINE_SWEEP = os.path.join(DATA_DIR, "sweep_2026_06_27_1641_baseline")
-INFLUENCER_SWEEP = os.path.join(DATA_DIR, "sweep_2026_06_27_1633_influencer")
-BASELINE_SVD_CSV = os.path.join(DATA_DIR, "sweep_2026_06_27_1641_baseline_svd", "simulations.csv")
-INFLUENCER_SVD_CSV = os.path.join(DATA_DIR, "sweep_2026_06_27_1633_influencer_svd", "simulations.csv")
+BASELINE_SWEEP = os.path.join(DATA_DIR, "baseline")
+INFLUENCER_SWEEP = os.path.join(DATA_DIR, "influencer")
+BASELINE_SVD_CSV = os.path.join(DATA_DIR, "baseline_svd", "simulations.csv.gz")
+INFLUENCER_SVD_CSV = os.path.join(DATA_DIR, "influencer_svd", "simulations.csv.gz")
 
 # ------------------------------------------------------------------ design constants
 N_PAIRS, N_DESIGNS, N_BLOCKS = 491_520, 16_384, 1_024

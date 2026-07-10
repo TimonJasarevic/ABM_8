@@ -29,7 +29,7 @@
 #
 # ---- COST / RUNTIME (estimate) ----------------------------------------------
 #   1 SBU = 1 core-hour; a full Genoa node bills all 192 cores x ACTUAL runtime
-#   (not the --time cap). The default Sobol sweep is ~430,080 sims, but write_full=false skips the heavy per-node/edge/cascade Arrow files
+#   (not the --time cap). The full Sobol sweep is 491,520 sims (16,384 x 30), but write_full=false skips the heavy per-node/edge/cascade Arrow files
 #   (no ~9 GB write) and emits only a small simulations.{arrow,csv}. Runtime is not
 #   yet calibrated; the --time cap below is deliberately generous (it is only a cap;
 #   SBU bills actual runtime). Check the elapsed time in slurm-<jobid>.out.
@@ -77,8 +77,8 @@ cp -f "$PROJ/sobol/design.csv" "$RUN_DIR/sobol/design.csv"
 cd "$RUN_DIR"                        # output -> $RUN_DIR/data/sweep_<timestamp>_<tag>
 
 # WRITE_FULL: enable the heavy per-cascade/node/edge Arrow files. Accept it from a positional
-# arg ($1, always delivered to the job script) or the environment, and export it so the julia
-# child sees it. Robust submit forms:  `sbatch run_snellius_baseline.sh true`  or  `WRITE_FULL=true sbatch run_snellius_baseline.sh`.
+# arg ($1, always delivered to the job script) and export it so the julia child sees it.
+# Submit form:  `sbatch run_snellius_baseline.sh true`.
 export WRITE_FULL="${1:-${WRITE_FULL:-false}}"
 echo "WRITE_FULL (job script) = '$WRITE_FULL'"
 
