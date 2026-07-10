@@ -2,12 +2,15 @@
 
 An agent-based model (ABM) of how fake news, including deepfake-style content, spreads, is
 verified, and is shared across a social network, and how that interacts with users' verification
-cost, reputation concerns, bounded rationality, and loss aversion. The simulation engine is the
-deepfake-percolation model of Dupont, C. (2026), written in Julia
-(https://github.com/charlesaugdupont/deepfake-percolation). This repository extends that engine
-with two paired seeding runners, `run_experiment_baseline.jl` (uniform-random seeding) and
-`run_experiment_influencers.jl` (hub seeding); the original 5-factor engine is preserved at
-`analysis/archive/legacy_5factor/run_experiment.jl`. The analysis and figures are in Python.
+cost, reputation concerns, bounded rationality, and loss aversion. This branch holds the code
+behind the manuscript "Influencers, bounded rationality, and the spread of fake news in social
+networks" (July 2026): the Julia simulation model, the experiment runners, and the Python
+analysis and figure pipeline. The simulation engine is the deepfake-percolation
+model of Dupont, C. (2026), written in Julia
+(https://github.com/charlesaugdupont/deepfake-percolation), extended here with two paired
+seeding runners, `run_experiment_baseline.jl` (uniform-random seeding) and
+`run_experiment_influencers.jl` (hub seeding). The initial Python/Mesa prototype mentioned in
+the manuscript is on the `main` branch.
 
 The repository supports two downstream analyses:
 
@@ -18,6 +21,27 @@ The repository supports two downstream analyses:
 2. **Seeding comparison.** A paired comparison of two cascade-seeding rules, uniform-random versus
    high-degree "influencer" hubs, on welfare, belief calibration, and misinformation reach.
 
+## Relation to the manuscript
+
+Where each headline result of the manuscript is produced:
+
+| Manuscript item | Produced by |
+|---|---|
+| Table 3 (Sobol indices) | `sobol/analyze.py`, after `sobol/augment_sv.py` adds the structural-virality column |
+| Table 4 (paired seeding contrasts) | `analysis/build_evidence.py compare` |
+| Table 5 (influencers vs ordinary agents) | `analysis/build_evidence.py influencer` |
+| Figure 4 (fake-reach equivalence, TOST) | `analysis/tost_blocks.py`, rendered by `analysis/make_figures.py` |
+| Figure 5 (prevalence profile of the seeding effect) | `analysis/robustness/switchover_audit.py`, rendered by `analysis/make_figures.py` |
+| Ignition-versus-shape decomposition | `analysis/sv_decomposition.py` (Sobol indices for the two parts: `sobol/analyze_svd.py`) |
+| Mean-field benchmark (Appendix A) | `analysis/mean_field.py` |
+| Burn-in adequacy and replication counts | `run_experiment_mser_probe.jl` + `analysis/replication_justification.py` |
+
+The descriptive figures (cascade sizes, verification behaviour, calibration) come from the
+evidence JSONs built by `analysis/build_evidence.py` and are rendered by
+`analysis/make_figures.py`. Reviewers who only need the manuscript's figures and numbers can
+use the self-contained reproduction package (`reproduction_jasss_07_06/`), distributed as a
+separate archive.
+
 ## Repository layout
 
 | Path | Contents |
@@ -26,10 +50,10 @@ The repository supports two downstream analyses:
 | `run_experiment_influencers.jl` | Influencer sweep: the same 7-factor design, hub seeding. |
 | `run_experiment_mser_probe.jl` | Burn-in adequacy probe (MSER-5): logs every cascade for a stratified subset of design points. |
 | `run_snellius.sh`, `run_snellius_baseline.sh` | SLURM job scripts for the influencer and baseline sweeps on the Snellius HPC cluster. |
-| `run_snellius_analysis.sh`, `run_snellius_test.sh` | SLURM job scripts for evidence building and for a small smoke test. |
+| `run_snellius_analysis.sh` | SLURM job script: builds the three evidence JSONs and the figures from a finished sweep pair and archives them under `analysis/runs/<tag>/`. |
 | `Project.toml`, `Manifest.toml` | Julia environment (pinned to Julia 1.12.6). |
-| `sobol/` | Sobol design generation (`make_design.py`), analysis (`analyze.py`, `analyze_svd.py`), results, and the design notes (`PLAN.md`). |
-| `analysis/` | Python evidence and figure pipeline: pure-compute scripts (`build_evidence.py`, `sv_decomposition.py`, `tost_blocks.py`, `mean_field.py`) write evidence JSONs and `make_figures.py` renders every figure; shared libraries live in `lib/` (`utils.py`, `plotstyle.py`, `data_io.py`); robustness checks in `robustness/`; documentation in `docs/`; superseded code in `archive/`. See `analysis/README.md`. |
+| `sobol/` | Sobol design generation (`make_design.py`), analysis (`analyze.py`, `analyze_svd.py`), sweep augmentation (`augment_sv.py`, adds the `avg_structural_virality` output), and results. |
+| `analysis/` | Python evidence and figure pipeline: pure-compute scripts (`build_evidence.py`, `sv_decomposition.py`, `tost_blocks.py`, `mean_field.py`, `replication_justification.py`) write evidence JSONs and `make_figures.py` renders every figure; `build_evidence_stream.py` reduces the large Arrow tables to per-simulation caches for bounded-memory runs; shared libraries live in `lib/` (`utils.py`, `plotstyle.py`, `data_io.py`); robustness checks in `robustness/`; `influence_identification.jl` checks that the top-degree hub seed pool matches k-shell and Collective Influence node rankings. |
 | `reproduction_jasss_07_06/` | Self-contained reproduction package for the manuscript, with bundled intermediate data. It is distributed as a separate archive rather than through version control. |
 | `data/` | Simulation output sweeps (not committed; regenerated by the runners). |
 | `requirements.txt` | Python dependencies. |
@@ -38,17 +62,19 @@ The repository supports two downstream analyses:
 
 The seven swept inputs (`sobol/problem.json`):
 
-| Factor | Range | Meaning |
-|---|---|---|
-| `v_cost` | 0.01–1.0 | verification cost |
-| `loss` | 1.0–3.0 | reputation loss from sharing fake news |
-| `tpr` | 0.6–0.99 | detector true-positive rate |
-| `fpr` | 0.01–0.4 | detector false-positive rate |
-| `p_fake` | 0.05–0.95 | prior probability a cascade is fake |
-| `log10_lambda` | −2.0–2.0 | bounded-rationality softmax temperature (back-transformed as 10^x) |
-| `loss_aversion` | 1.0–3.0 | prospect-theory loss-aversion coefficient (1.0 = loss-neutral) |
+| Factor | Paper symbol | Range | Meaning |
+|---|---|---|---|
+| `v_cost` | c | 0.01–1.0 | verification cost |
+| `loss` | ℓ (P_f) | 1.0–3.0 | reputation loss from sharing fake news |
+| `tpr` | TPR | 0.6–0.99 | detector true-positive rate |
+| `fpr` | FPR | 0.01–0.4 | detector false-positive rate |
+| `p_fake` | p_fake | 0.05–0.95 | prior probability a cascade is fake |
+| `log10_lambda` | log10 λ | −2.0–2.0 | bounded-rationality softmax precision (back-transformed as 10^x) |
+| `loss_aversion` | λ_LA | 1.0–3.0 | prospect-theory loss-aversion coefficient (1.0 = loss-neutral) |
 
-Both seeding sweeps vary all seven factors over the same Saltelli design.
+Both seeding sweeps vary all seven factors over the same Saltelli design: 16,384 design points
+with 30 replications each, or 491,520 simulations per seeding arm, paired one-to-one by
+`global_sim_id`.
 
 ## Requirements
 
@@ -75,8 +101,8 @@ environment (`SALib 1.4.8` predates NumPy 2); see `requirements.txt`.
 ## Data
 
 The analyses consume per-simulation tables under `data/sweep_<timestamp>/`. The two sweeps behind
-the seeding comparison are `data/sweep_2026_06_22_2150/` (baseline, uniform seeding) and
-`data/sweep_2026_06_23_1522/` (influencer, hub seeding). The `data/` tree is large and is not
+the seeding comparison are `data/sweep_2026_06_27_1641_baseline/` (uniform seeding) and
+`data/sweep_2026_06_27_1633_influencer/` (hub seeding). The `data/` tree is large and is not
 committed; regenerate it with the runners, or point the analysis at your own sweeps.
 
 ## Reproduction
@@ -89,15 +115,18 @@ package (`reproduction_jasss_07_06/`, one command, no HPC access or raw data req
 
 ```bash
 # Baseline: 7-factor Saltelli design, uniform-random seeding -> data/sweep_<timestamp>/
-julia -t auto run_experiment_baseline.jl
+julia --project=. -t auto run_experiment_baseline.jl
 
-# Influencer sweep: requires sobol/design.csv (step B1); same design, hub seeding
-julia -t auto run_experiment_influencers.jl
+# Influencer sweep: same design, hub seeding
+julia --project=. -t auto run_experiment_influencers.jl
 ```
 
-These are HPC-scale (tens to hundreds of thousands of simulations); see the Snellius section. A
-fast end-to-end check is `julia -t auto run_experiment_smoke.jl`. The burn-in length is validated
-separately by `run_experiment_mser_probe.jl` together with `analysis/replication_justification.py`.
+Both runners read `sobol/design.csv` (step B1). By default only the per-simulation table is
+written; set the environment variable `WRITE_FULL=true` to also write the per-node, per-edge,
+and per-cascade Arrow tables that step C and `sobol/augment_sv.py` need. These are HPC-scale (tens
+to hundreds of thousands of simulations); see the Snellius section. The burn-in length is
+validated separately by `run_experiment_mser_probe.jl` together with
+`analysis/replication_justification.py`.
 
 ### B. Sobol global sensitivity analysis (Sobol-SA environment)
 
@@ -105,14 +134,21 @@ separately by `run_experiment_mser_probe.jl` together with `analysis/replication
 # 1. Saltelli design: N=1024, 7 factors -> N(2k+2) = 16,384 points (deterministic, seed 42)
 python sobol/make_design.py --N 1024
 
-# 2. Run the ABM over the design (step A, run_experiment_influencers.jl)
+# 2. Run the ABM over the design with WRITE_FULL enabled (step A)
 
-# 3. Deterministic + stochastic Sobol indices, confidence intervals, tables, plots
-python sobol/analyze.py        # reads the latest data/sweep_*, writes sobol/results/
+# 3. Aggregate avg_structural_virality from cascades.arrow into simulations.csv
+#    (main environment, needs pyarrow; writes data/sweep_<timestamp>_sv/ by default)
+python sobol/augment_sv.py data/sweep_<timestamp>
+
+# 4. Deterministic + stochastic Sobol indices, confidence intervals, tables, plots
+python sobol/analyze.py --sweep data/sweep_<timestamp>_sv    # writes sobol/results/
 ```
 
-Sweeps generated with an older welfare definition can be corrected in place: pass
-`--welfare-npz` to override the stored `sen_welfare` column with the renormalised-Gini values.
+The runners do not write `avg_structural_virality` themselves; step 3 adds it from
+`cascades.arrow`, which only `WRITE_FULL` sweeps contain. Without `--sweep`, `analyze.py` reads
+the latest `data/sweep_*`. Sweeps generated with an older welfare definition can be corrected in
+place: pass `--welfare-npz` to override the stored `sen_welfare` column with the
+renormalised-Gini values.
 
 ### C. Seeding comparison: evidence and figures (main environment)
 
@@ -122,24 +158,36 @@ python analysis/build_evidence.py eda        --baseline <baseline-sweep>
 python analysis/build_evidence.py compare    --baseline <baseline-sweep> --influencer <influencer-sweep>
 python analysis/build_evidence.py influencer --influencer <influencer-sweep>
 
-# Render every figure into analysis/figures/
+# Render every figure whose inputs are present into analysis/figures/
 python analysis/make_figures.py
 ```
 
 The defaults point at the paired sweeps named under **Data**, but passing both sweeps explicitly
-is recommended. The remaining pure-compute analyses (`sv_decomposition.py`, `tost_blocks.py`,
-`mean_field.py`, and the checks in `robustness/`) are documented, with their run order, in
-`analysis/README.md`.
+is recommended. On machines without tens of GB of RAM, first reduce each sweep to small
+per-simulation `.npz` caches with `analysis/build_evidence_stream.py` (subcommands documented in
+the script) and pass the cache directory to `build_evidence.py` via `--cache`. The remaining
+pure-compute analyses (`sv_decomposition.py`, `tost_blocks.py`, `mean_field.py`,
+`replication_justification.py`, and the checks in `robustness/`) write their outputs under
+`analysis/runs/`, and some consume earlier outputs: run `sv_decomposition.py reduce
+--write-sobol-csv` before `tost_blocks.py` and `replication_justification.py`; the latter also
+needs the `build_evidence_stream.py` node cache and the MSER probe output, and `tost_blocks.py`
+cross-checks against two archived run folders that ship with the reproduction package rather
+than this repository. Re-run `make_figures.py` afterwards to pick up the figures these analyses
+feed.
 
 ### Snellius (HPC)
 
 ```bash
 python sobol/make_design.py --N 1024       # the design must exist before submitting
-sbatch run_snellius.sh                     # full influencer sweep, 192-core Genoa node (~2-3 h)
-sbatch run_snellius_baseline.sh            # full baseline sweep, same node type
-sbatch run_snellius_analysis.sh            # evidence building on the finished sweeps
-sbatch run_snellius_test.sh                # optional 16-core smoke test
+sbatch run_snellius.sh true                # full influencer sweep, one 192-core Genoa node
+sbatch run_snellius_baseline.sh true       # full baseline sweep, same node type
+sbatch run_snellius_analysis.sh            # evidence JSONs + figures from the finished sweeps
 ```
+
+The `true` argument enables `WRITE_FULL`, which the analysis job requires. The sweep jobs
+request a 6-hour cap; actual runtime is not yet calibrated, and Snellius bills the elapsed time,
+not the cap. `run_snellius_analysis.sh` runs the three evidence subcommands, renders the
+figures, and archives everything under `analysis/runs/<tag>/`.
 
 ## Outputs
 
@@ -149,19 +197,12 @@ sbatch run_snellius_test.sh                # optional 16-core smoke test
 - `analysis/runs/`: archived per-run outputs of the pure-compute analyses.
 - `sobol/results/`: `sa_indices.csv`, `sa_indices_S2.csv`, `sa_indices.tex`, and per-output plots.
 
-## Further reading
-
-- `sobol/PLAN.md`: Sobol design, method, and design decisions.
-- `analysis/README.md`: pipeline layout and run order.
-- `analysis/docs/METHODOLOGY.md`, `analysis/docs/RESULTS_ADVERSARIAL_INTERPRETATION.md`: the
-  current methodology and results write-ups.
-
 ## Notes
 
 - The two seeding-comparison sweeps share the same 7-factor Saltelli design and per-simulation
   seeds; they differ only in the cascade seed pool (uniform-random nodes versus the top-degree
   hubs), so simulations are matched by `global_sim_id`.
-- `sobol/design.csv` is deterministic (seed 42); the Julia runner reads it and does not modify it.
+- `sobol/design.csv` is deterministic (seed 42); the Julia runners read it and do not modify it.
 
 ## Acknowledgements
 
