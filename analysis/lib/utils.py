@@ -4,29 +4,13 @@ Key references: Raffinetti, Siletti & Vernizzi (2015) renormalised Gini;
 Sen (1976) / Stark (2025) welfare; Lakens (2013) d_av; Kirby & Gerlanc (2013) bootstrap CIs;
 Benjamini & Hochberg (1995) / Benjamini & Yekutieli (2001) FDR; Lakens et al. (2018) TOST;
 Hartigan & Hartigan (1985) dip test; Van Calster et al. (2019) flexible calibration;
-Esteban & Ray (1994) polarization; Hoad/Robinson/Davies (2010) MSER-5; Secchi & Seri (2017).
+Hoad/Robinson/Davies (2010) MSER-5; Secchi & Seri (2017).
 """
 
 import numpy as np
 
 
 # ----------------------------------------------------------------------------- inequality / welfare
-def _gini(x):
-    """Classical Gini coefficient. VALID ONLY FOR NON-NEGATIVE inputs (can exceed 1 otherwise).
-
-    For signed data use :func:`gini_negatives`.
-    """
-    x = np.sort(np.asarray(x, dtype=float))
-    n = x.size
-    if n == 0:
-        return 0.0
-    total = x.sum()
-    if total <= 0:
-        return 0.0
-    idx = np.arange(1, n + 1)
-    return (2.0 * np.sum(idx * x)) / (n * total) - (n + 1.0) / n
-
-
 def gini_negatives(x):
     """Renormalised Gini for data that may contain negative values (Raffinetti, Siletti &
     Vernizzi 2015), a direct port of ``GiniWegNeg::Gini_RSV`` (unit weights).
@@ -71,39 +55,12 @@ def belief_dispersion(x):
     (0 = consensus, 1 = half at 0 / half at 1).
 
     Variance is the *dispersion* sense only (Bramson et al. 2017, "nine senses of polarization")
-    and does NOT imply two groups/modes; use :func:`dip_test` for bimodality and
-    :func:`esteban_ray` for group divergence.
+    and does NOT imply two groups/modes; use :func:`dip_test` for bimodality.
     """
     x = np.asarray(x, dtype=float)
     if x.size == 0:
         return 0.0
     return float(4.0 * np.var(x))
-
-
-# ``polarization`` is an alias for the dispersion measure above (variance sense).
-polarization = belief_dispersion
-
-
-def esteban_ray(x, alpha=1.0, n_bins=10, K=1.0):
-    """Esteban & Ray (1994) polarization index P = K * sum_i sum_j pi_i^(1+alpha) pi_j |y_i - y_j|,
-    the group-divergence sense. Continuous ``x`` is histogram-binned (pi_i = mass in bin i,
-    y_i = bin centre). ``alpha`` in (0, 1.6] (default 1.0). Provided as the sense-appropriate
-    alternative to dispersion; not wired into the evidence scripts by default.
-    """
-    x = np.asarray(x, dtype=float)
-    x = x[np.isfinite(x)]
-    if x.size == 0:
-        return 0.0
-    lo, hi = min(float(x.min()), 0.0), max(float(x.max()), 1.0)
-    counts, edges = np.histogram(x, bins=n_bins, range=(lo, hi))
-    total = counts.sum()
-    if total == 0:
-        return 0.0
-    pi = counts / total
-    centres = (edges[:-1] + edges[1:]) / 2.0
-    diff = np.abs(centres[:, None] - centres[None, :])
-    P = np.sum((pi ** (1.0 + alpha))[:, None] * pi[None, :] * diff)
-    return float(K * P)
 
 
 def bimodality_coefficient(x):

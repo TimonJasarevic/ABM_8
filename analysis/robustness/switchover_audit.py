@@ -35,27 +35,23 @@ import time
 
 import numpy as np
 import pandas as pd
-import psutil
-import pyarrow as pa
 
 _ANALYSIS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ANALYSIS)                        # analysis/ on sys.path
 sys.path.insert(0, os.path.join(_ANALYSIS, "lib"))   # analysis/lib on sys.path
 import data_io  # noqa: E402
-from data_io import (PFAKE_EDGES, N_PAIRS, N_DESIGNS, N_BLOCKS,  # noqa: E402
-                     BLOCK, REPS, trim_working_set, ram_guard)
+from data_io import PFAKE_EDGES, N_PAIRS, N_DESIGNS, N_BLOCKS, BLOCK, REPS  # noqa: E402
 from utils import tost_clustered  # noqa: E402
 
 BASE_CSV = data_io.BASELINE_SVD_CSV
 INFL_CSV = data_io.INFLUENCER_SVD_CSV
 
-N_SIMS = 491_520
+N_SIMS = N_PAIRS
 SIM_LO = 1
-N_PER_SIM = 1000
-SIZE_MAX = 300
+N_PER_SIM = data_io.N_CASC_PER_SIM
+SIZE_MAX = data_io.N_NODES
 REACH_FLOOR = 1.0 / SIZE_MAX          # reach of a size-1 (non-igniting) cascade
 CHUNK = 5_000_000
-MIN_AVAIL_GB = 1.0
 ALL_CELLS = set(range(1, BLOCK + 1))  # complete-pair subsets may thin block cells to any size
 
 ACC_KEYS = ("n_fake", "n_fake_ign", "sum_size_fake", "sum_size_fake_ign",
@@ -72,16 +68,13 @@ def cmd_stream(args):
             return
         print(f"{out} exists but is partial; re-streaming", flush=True)
 
-    path = os.path.join(args.sweep, "cascades.arrow")
-    batch = pa.ipc.open_file(pa.memory_map(path, "r")).get_batch(0)
-    n_rows = batch.num_rows if args.max_rows is None else min(batch.num_rows, args.max_rows)
+    batch, n_rows = data_io.open_arrow(os.path.join(args.sweep, "cascades.arrow"))
+    if args.max_rows is not None:
+        n_rows = min(n_rows, args.max_rows)
 
     acc = {k: np.zeros(N_SIMS, np.int64) for k in ACC_KEYS}
     t0 = time.time()
-    for off in range(0, n_rows, CHUNK):
-        ram_guard(MIN_AVAIL_GB)
-        n = min(CHUNK, n_rows - off)
-        sl = batch.slice(off, n)
+    for off, sl in data_io.stream_chunks(batch, n_rows, CHUNK, label=args.label, print_every=10):
         sid = sl.column("global_sim_id").to_numpy(zero_copy_only=True)
         size = sl.column("cascade_size").to_numpy(zero_copy_only=True)
         fake = sl.column("is_fake").to_numpy(zero_copy_only=False)  # bit-packed bool: copies
@@ -98,18 +91,11 @@ def cmd_stream(args):
                 k_all, weights=size[flag], minlength=N_SIMS).astype(np.int64)
             acc[f"sum_size_{pre}_ign"] += np.bincount(
                 k_ign, weights=size[flag & ign], minlength=N_SIMS).astype(np.int64)
-        trim_working_set()
-        done = off + n
-        if (off // CHUNK) % 10 == 0 or done == n_rows:
-            rate = done / max(time.time() - t0, 1e-9) / 1e6
-            avail = psutil.virtual_memory().available / 2**30
-            print(f"{args.label}: {done:,}/{n_rows:,} rows "
-                  f"({rate:.1f} M rows/s, avail {avail:.1f} GiB)", flush=True)
 
     if args.max_rows is None:
-        assert done == N_SIMS * N_PER_SIM, done                                     # S1 (stream)
+        assert n_rows == N_SIMS * N_PER_SIM, n_rows                                 # S1 (stream)
     os.makedirs(args.out, exist_ok=True)
-    np.savez_compressed(out, n_rows_streamed=done, sweep=args.sweep, label=args.label, **acc)
+    np.savez_compressed(out, n_rows_streamed=n_rows, sweep=args.sweep, label=args.label, **acc)
     print(f"WROTE {out} ({time.time() - t0:.0f}s)", flush=True)
 
 
@@ -226,8 +212,8 @@ def cmd_reduce(args):
     t0 = time.time()
     acc_b = _load_acc(args.out, "baseline")
     acc_i = _load_acc(args.out, "influencer")
-    sim_b, dp_b, gates_b = _per_dp(acc_b, BASE_CSV, 0.22555)
-    sim_i, dp_i, gates_i = _per_dp(acc_i, INFL_CSV, 0.22817)
+    sim_b, dp_b, gates_b = _per_dp(acc_b, BASE_CSV, data_io.PUBLISHED_MEANS[0])
+    sim_i, dp_i, gates_i = _per_dp(acc_i, INFL_CSV, data_io.PUBLISHED_MEANS[1])
     assert np.array_equal(dp_b.index.values, dp_i.index.values)
     assert np.allclose(dp_b["p_fake"].values, dp_i["p_fake"].values)
 

@@ -5,7 +5,7 @@ Data facts and IO only -- no statistics (those live in :mod:`utils`). Importing 
 inexpensive: pyarrow/psutil are imported lazily inside the helpers that need them.
 """
 import os
-import sys
+import time
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,8 @@ SVDECOMP_DIR = os.path.join(RUNS_DIR, "svdecomp_2026_07_09")
 TOST_DIR = os.path.join(RUNS_DIR, "tost_blocks_2026_07_04")
 SWITCHOVER_DIR = os.path.join(RUNS_DIR, "switchover_audit_2026_07_04")
 MEANFIELD_DIR = os.path.join(RUNS_DIR, "mean_field_2026_07_09")
+# The streamed per-sim node/cascade cache that build_evidence.py reduces from by default.
+NODECACHE_DIR = os.path.join(RUNS_DIR, "nodecache_2026_07_08")
 
 # The two paired sweeps (uniform-random vs top-degree hub seeding); identical Saltelli
 # design and per-simulation seeds, so simulations match one-to-one on global_sim_id.
@@ -35,6 +37,13 @@ INFLUENCER_SVD_CSV = os.path.join(DATA_DIR, "sweep_2026_06_27_1633_influencer_sv
 # ------------------------------------------------------------------ design constants
 N_PAIRS, N_DESIGNS, N_BLOCKS = 491_520, 16_384, 1_024
 BLOCK, REPS, PAIRS_PER_BLOCK = 16, 30, 480
+N_NODES = 300                                         # agents per simulation = network size (Julia N_AGENTS)
+N_CASC_PER_SIM = 1000                                 # recorded post-burn-in cascades per simulation
+SESOI = 0.05                                          # fake-news reach equivalence band, raw units (TOST)
+FACTORS = ["v_cost", "loss", "tpr", "fpr", "p_fake", "rationality", "loss_aversion"]
+NODE_COLS = ["global_sim_id", "payoff", "best_payoff", "worst_payoff", "true_shares",
+             "fake_shares", "tpr_alpha", "tpr_beta", "true_alpha", "true_beta"]  # nodes.arrow projection
+CASC_METRICS = ["cascade_size", "max_depth", "seed_degree", "shares", "verifications"]
 PFAKE_EDGES = np.linspace(0.05, 0.95, 10)             # nine equal-width prevalence bins
 LAMBDA_EDGES = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])  # four log10-rationality bins
 PUBLISHED_MEANS = (0.22555, 0.22817)                  # baseline, influencer avg_fake_cascade
@@ -82,19 +91,51 @@ else:
         pass
 
 
-def ram_guard(min_avail_gb=1.0):
-    """Abort cleanly (exit code 3) if available system RAM drops below ``min_avail_gb`` GiB,
-    turning a near-OOM condition into a controlled stop rather than an abrupt termination."""
+def ram_guard():
+    """Throttle -- never abort -- when available system RAM falls below 10% of the machine's
+    total, i.e. overall usage may reach at most 90% of the device's RAM. Machine-relative and
+    re-evaluated at every check; there is deliberately no absolute threshold. On low memory the
+    caller is paused: clean memory-mapped pages are returned to the OS and the check repeats
+    once per second until availability recovers above the floor."""
     import psutil
-    avail = psutil.virtual_memory().available / 2 ** 30
-    if avail < min_avail_gb:
-        print(f"ABORT: available RAM {avail:.2f} GiB < {min_avail_gb} GiB", flush=True)
-        sys.exit(3)
+    vm = psutil.virtual_memory()
+    floor = 0.10 * vm.total
+    waited = 0
+    while vm.available < floor:
+        if waited == 0:
+            print(f"THROTTLE: available RAM {vm.available / 2**30:.2f} GiB < floor "
+                  f"{floor / 2**30:.2f} GiB (10% of {vm.total / 2**30:.2f} GiB total); "
+                  "pausing until memory frees", flush=True)
+        trim_working_set()
+        time.sleep(1)
+        waited += 1
+        vm = psutil.virtual_memory()
+    if waited:
+        print(f"THROTTLE: resumed after {waited}s (avail {vm.available / 2**30:.2f} GiB)", flush=True)
 
 
-def open_cascades(sweep_dir):
-    """Memory-map ``<sweep_dir>/cascades.arrow`` (zero-copy) and return ``(batch, n_rows)``."""
+def open_arrow(path):
+    """Memory-map an Arrow IPC file (zero-copy) and return ``(record batch, n_rows)``."""
     import pyarrow as pa
-    path = os.path.join(sweep_dir, "cascades.arrow")
     batch = pa.ipc.open_file(pa.memory_map(path, "r")).get_batch(0)
     return batch, batch.num_rows
+
+
+def stream_chunks(batch, n_rows, chunk_rows, label="", print_every=1):
+    """Yield ``(offset, slice)`` over the first ``n_rows`` of a memory-mapped record batch in
+    ``chunk_rows``-sized pieces: the RAM guard runs before each chunk, the working set is
+    trimmed after it, and a progress line prints every ``print_every`` chunks (``label``
+    prefixes the line; an empty label streams silently). The per-chunk accumulator logic
+    stays in the caller; this generator owns only the walk/guard/trim/progress scaffold."""
+    import psutil
+    t0 = time.time()
+    for i, off in enumerate(range(0, n_rows, chunk_rows)):
+        ram_guard()
+        n = min(chunk_rows, n_rows - off)
+        yield off, batch.slice(off, n)
+        trim_working_set()
+        done = off + n
+        if label and (i % print_every == 0 or done == n_rows):
+            rate = done / max(time.time() - t0, 1e-9) / 1e6
+            print(f"{label}: {done:,}/{n_rows:,} rows ({rate:.1f} M rows/s, "
+                  f"avail {psutil.virtual_memory().available / 2**30:.1f} GiB)", flush=True)

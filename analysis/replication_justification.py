@@ -25,9 +25,9 @@ import utils
 
 PROBE_DIR = os.path.join(HERE, "runs", "mser_probe_2026_07_09")
 OUT_DIR = os.path.join(HERE, "runs", "replication_justification_2026_07_09")
-CACHE_DIR = os.path.join(HERE, "runs", "nodecache_2026_07_08")
+CACHE_DIR = data_io.NODECACHE_DIR
 BURN_IN_USED = 1000
-N_AGENTS = 300
+N_AGENTS = data_io.N_NODES
 
 # SESOI 0.05 raw reach units over the average condition SD 0.255782 -> d_av 0.1955; the
 # two-group Cohen's f equivalent is d/2.

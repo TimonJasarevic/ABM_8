@@ -36,7 +36,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(0, os.path.join(_HERE, "lib"))
 import data_io
-from plotstyle import set_pub_style, BLUE, ORANGE, RED, GREY, DARK, CRIMSON, UVABLUE, ARM_COLORS
+from plotstyle import set_pub_style, BLUE, ORANGE, GREY, DARK, CRIMSON, UVABLUE, ARM_COLORS
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 # Evidence directory: pass a run directory as the first argument to read its eda/compare/influencer
@@ -553,17 +553,8 @@ def fig_cascade_schematic(stem="cascade_schematic"):
 # Self-contained (own style); rendered from switchover_audit_evidence.json.
 
 def fig_switchover_profile(ev):
-    sns.set_context("notebook", font_scale=1.2)
-    plt.style.use("seaborn-v0_8-whitegrid")
-    plt.rcParams.update({
-        "font.size": 15, "figure.dpi": 100, "grid.alpha": 0.3, "axes.axisbelow": True,
-        "mathtext.fontset": "cm",
-        "xtick.labelsize": 12, "ytick.labelsize": 12, "axes.labelsize": 14,
-        "legend.fontsize": 11,
-    })
-    plt.rc("text", usetex=False)
-    plt.rc("font", family="serif")
-    grey = "#7f7f7f"
+    set_pub_style(12, 14, 11, figsize=None)   # figsize=None: this figure never set figure.figsize
+    grey = GREY
 
     pf = ev["pfake_bins"]
     x = [(float(s["bin"].split(",")[0][1:]) + float(s["bin"].split(",")[1][:-1])) / 2

@@ -22,9 +22,9 @@ meaningless, so inference rides on the per-simulation paired statistics.
 
 Usage (the main analysis environment, see requirements.txt; stream the two seeding
 configurations in parallel processes, then reduce):
-  python analysis/sv_decomposition.py stream --sweep data/sweep_2026_06_27_1641_baseline   --label baseline   --out analysis/runs/svdecomp_2026_07_02
-  python analysis/sv_decomposition.py stream --sweep data/sweep_2026_06_27_1633_influencer --label influencer --out analysis/runs/svdecomp_2026_07_02
-  python analysis/sv_decomposition.py reduce --out analysis/runs/svdecomp_2026_07_02 \
+  python analysis/sv_decomposition.py stream --sweep data/sweep_2026_06_27_1641_baseline   --label baseline   --out analysis/runs/svdecomp_2026_07_09
+  python analysis/sv_decomposition.py stream --sweep data/sweep_2026_06_27_1633_influencer --label influencer --out analysis/runs/svdecomp_2026_07_09
+  python analysis/sv_decomposition.py reduce --out analysis/runs/svdecomp_2026_07_09 \
       --baseline-csv data/sweep_2026_06_27_1641_baseline_svd/simulations.csv \
       --influencer-csv data/sweep_2026_06_27_1633_influencer_svd/simulations.csv \
       [--write-sobol-csv]
@@ -32,7 +32,6 @@ configurations in parallel processes, then reduce):
 """
 import argparse
 import datetime
-import functools
 import json
 import os
 import sys
@@ -40,21 +39,18 @@ import time
 
 import numpy as np
 import pandas as pd
-import psutil
-import pyarrow as pa
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "lib"))
-import build_evidence as be  # paired_cmp/_paired_core conventions (import is side-effect-free)
-import utils
+import paired_stats  # shared paired-inference conventions (_paired_core, _block_extras, g3)
 from utils import bh_fdr
-from data_io import trim_working_set, ram_guard
+import data_io
 
-N_SIMS = 491_520
+N_SIMS = data_io.N_PAIRS
 SIM_LO = 1                     # global_sim_id range verified [1, 491520] in both configurations
-N_PER_SIM = 1000               # recorded post-burn-in cascades per simulation
-SIZE_MAX = 300                 # network size; cascade_size in [1, 300]
+N_PER_SIM = data_io.N_CASC_PER_SIM   # recorded post-burn-in cascades per simulation
+SIZE_MAX = data_io.N_NODES     # network size; cascade_size in [1, 300]
 DEPTH_MAX = 300
 CHUNK = 5_000_000
 N_BINS = 8                     # log10 size bins, the Goel Fig. 5 convention used project-wide
@@ -62,7 +58,6 @@ SV_STEP = 0.001
 SV_MAX = 35.0
 SV_NBINS = int(SV_MAX / SV_STEP) + 1   # last bin collects any overflow >= SV_MAX
 DEG_MAX = 1024                 # seed_degree / seed_node bincount width (degree < N)
-MIN_AVAIL_GB = 1.0
 
 ARM_LABELS = ("baseline", "influencer")
 
@@ -84,9 +79,9 @@ def size_bin_lut():
 
 def cmd_stream(args):
     lut, _, _ = size_bin_lut()
-    path = os.path.join(args.sweep, "cascades.arrow")
-    batch = pa.ipc.open_file(pa.memory_map(path, "r")).get_batch(0)
-    n_rows = batch.num_rows if args.max_rows is None else min(batch.num_rows, args.max_rows)
+    batch, n_rows = data_io.open_arrow(os.path.join(args.sweep, "cascades.arrow"))
+    if args.max_rows is not None:
+        n_rows = min(n_rows, args.max_rows)
 
     n_total = np.zeros(N_SIMS, np.int64)
     n_spread = np.zeros(N_SIMS, np.int64)
@@ -104,10 +99,7 @@ def cmd_stream(args):
     sv_true_max = 0.0
 
     t0 = time.time()
-    for off in range(0, n_rows, CHUNK):
-        ram_guard(MIN_AVAIL_GB)
-        n = min(CHUNK, n_rows - off)
-        sl = batch.slice(off, n)
+    for off, sl in data_io.stream_chunks(batch, n_rows, CHUNK, label=args.label, print_every=10):
         sid = sl.column("global_sim_id").to_numpy(zero_copy_only=True)
         size = sl.column("cascade_size").to_numpy(zero_copy_only=True)
         sv = sl.column("structural_virality").to_numpy(zero_copy_only=True)
@@ -140,13 +132,6 @@ def cmd_stream(args):
         n_size1 += int((size == 1).sum())
         n_sv_overflow += int((sv >= SV_MAX).sum())
         sv_true_max = max(sv_true_max, float(sv.max()))
-        trim_working_set()
-        done = off + n
-        if (off // CHUNK) % 10 == 0 or done == n_rows:
-            rate = done / max(time.time() - t0, 1e-9) / 1e6
-            avail = psutil.virtual_memory().available / 2**30
-            print(f"{args.label}: {done:,}/{n_rows:,} rows "
-                  f"({rate:.1f} M rows/s, avail {avail:.1f} GiB)", flush=True)
 
     os.makedirs(args.out, exist_ok=True)
     tag = "" if args.max_rows is None else "_smoke"
@@ -164,13 +149,6 @@ def cmd_stream(args):
 
 
 # ------------------------------------------------------------------ reduce helpers
-# utils.bootstrap_ci with scipy's ``batch=100``: the default batch materialises an
-# (n_resamples, n) resample matrix (~37 GiB at n = 491,520), which fits the Snellius nodes
-# that produced compare_evidence.json but not this machine. Batching only chunks the
-# same rng stream, so the interval is unchanged.
-be.bootstrap_ci = functools.partial(utils.bootstrap_ci, batch=100)
-
-
 def _load_acc(out_dir, label):
     path = os.path.join(out_dir, f"acc_{label}.npz")
     acc = dict(np.load(path).items())
@@ -222,7 +200,7 @@ def _paired_row(a, b, blocks=None):
             "cohens_dz", "cohens_d_av", "p_ttest", "p_wilcoxon",
             "frac_influencer_gt_baseline", "rel_change_pct")},
             "ci95_diff_boot": [float("nan")] * 2, "ci95_diff_normal": [float("nan")] * 2}
-    c = be._paired_core(a, b, mask_nonfinite=True, blocks=blocks)
+    c = paired_stats._paired_core(a, b, mask_nonfinite=True, blocks=blocks)
     mean_a, mean_b = float(c["a"].mean()), float(c["b"].mean())
     rel = c["md"] / abs(mean_a) * 100 if mean_a != 0 else None
     row = {
@@ -236,12 +214,12 @@ def _paired_row(a, b, blocks=None):
         "ci95_diff_boot": [round(c["blo"], 5), round(c["bhi"], 5)],
         "ci95_diff_normal": [round(c["md"] - 1.96 * c["se"], 5),
                              round(c["md"] + 1.96 * c["se"], 5)],
-        "p_ttest": be.g3(c["pt"]), "p_wilcoxon": be.g3(c["pw"]),
+        "p_ttest": paired_stats.g3(c["pt"]), "p_wilcoxon": paired_stats.g3(c["pw"]),
         "frac_influencer_gt_baseline": round(float((c["d"] > 0).mean()), 4),
         "rel_change_pct": (round(rel, 2) if rel is not None else None),
     }
     if blocks is not None:
-        row.update(be._block_extras(c, blocks))
+        row.update(paired_stats._block_extras(c, blocks))
     return row
 
 
@@ -340,8 +318,9 @@ def cmd_reduce(args):
     # layout asserted against a table carrying both id columns
     _ids = pd.read_csv(args.baseline_csv, usecols=["global_sim_id", "design_id"])
     assert len(_ids) == N_SIMS, len(_ids)
-    assert np.array_equal(_ids["design_id"].values, (_ids["global_sim_id"].values - 1) // 30 + 1)
-    blocks = np.arange(N_SIMS) // 480
+    assert np.array_equal(_ids["design_id"].values,
+                          (_ids["global_sim_id"].values - 1) // data_io.REPS + 1)
+    blocks = np.arange(N_SIMS) // data_io.PAIRS_PER_BLOCK
     paired = {}
     for name, key in (("pooled_sv", "pooled_sv"), ("pooled_depth", "pooled_depth"),
                       ("ignition_rate", "ignition"), ("cond_sv", "cond_sv"),
@@ -408,14 +387,14 @@ def cmd_reduce(args):
         pvals.append(row["p_ttest"])
     qvals = bh_fdr(np.array(pvals, float))
     for row, q in zip(per_bin_paired, qvals):
-        row["q_fdr_by"] = be.g3(float(q))
+        row["q_fdr_by"] = paired_stats.g3(float(q))
     # the same six-populated-bin family on the CR1 block-clustered p's (NaN rows preserved)
     qvals_clu = bh_fdr(np.array([row.get("p_ttest_clustered", float("nan"))
                                  for row in per_bin_paired], float))
     for row, q in zip(per_bin_paired, qvals_clu):
         if "p_ttest_clustered" in row:
-            row["q_fdr_by_clustered"] = be.g3(float(q))
-            row["p_ttest_clustered"] = be.g3(row["p_ttest_clustered"])
+            row["q_fdr_by_clustered"] = paired_stats.g3(float(q))
+            row["p_ttest_clustered"] = paired_stats.g3(row["p_ttest_clustered"])
 
     # ---------------- pass criteria V1-V7
     csv_means = {}

@@ -22,48 +22,41 @@ sys.path.insert(0, os.path.join(_ANALYSIS, "lib"))   # analysis/lib on sys.path
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 
 import data_io
-from utils import cohens_d_av
+from utils import cohens_d_av, tost_clustered
 
-BASE_SV = data_io.BASELINE_SVD_CSV
-INFL_SV = data_io.INFLUENCER_SVD_CSV
-BASE_SVD = data_io.BASELINE_SVD_CSV
-INFL_SVD = data_io.INFLUENCER_SVD_CSV
+BASE_CSV = data_io.BASELINE_SVD_CSV
+INFL_CSV = data_io.INFLUENCER_SVD_CSV
 DESIGN = data_io.DESIGN_CSV
 OUT = os.path.join(data_io.RUNS_DIR, "loss_edge_2026_07_03")
 
 EDGE = 1.05
-SESOI, ALPHA = 0.05, 0.05
-N_PAIRS, N_CLUSTERS, REPS = 491_520, 16_384, 30
+SESOI, ALPHA = data_io.SESOI, 0.05
+N_PAIRS, N_CLUSTERS, REPS = data_io.N_PAIRS, data_io.N_DESIGNS, data_io.REPS
 
 
-def load(path, value_col):
-    cols = ["global_sim_id", "design_id", "loss", value_col]
+def load(path, value_cols):
+    cols = ["global_sim_id", "design_id", "loss", *value_cols]
     df = pd.read_csv(path, usecols=cols).sort_values("global_sim_id").reset_index(drop=True)
     assert len(df) == N_PAIRS, (path, len(df))
     return df
 
 
 def clustered_tost(diff, design_ids):
-    # equals utils.tost_clustered under this balanced design (kept as a local inline copy)
-    g = pd.Series(diff).groupby(design_ids)
-    cm = g.mean().values
-    md = float(cm.mean())
-    se = float(cm.std(ddof=1) / np.sqrt(cm.size))
-    df = cm.size - 1
-    p_lo = float(stats.t.sf((md + SESOI) / se, df))
-    p_hi = float(stats.t.cdf((md - SESOI) / se, df))
-    t95 = float(stats.t.ppf(0.95, df))
+    """utils.tost_clustered on the design-point clusters, remapped to this file's output
+    schema. Under the balanced design the CR1 SE equals the cluster-mean SE the former
+    local inline copy computed; only float-operation order differs (~1e-15, below every
+    reported precision)."""
+    t = tost_clustered(diff, design_ids, sesoi=SESOI, alpha=ALPHA, expect_sizes={REPS})
     return {
-        "n_clusters": int(cm.size),
-        "mean_diff": md,
-        "se_clustered": se,
-        "ci90_clustered": [md - t95 * se, md + t95 * se],
-        "p_tost": max(p_lo, p_hi),
-        "equivalent": bool(max(p_lo, p_hi) < ALPHA),
-        "smallest_passing_sesoi": float(abs(md) + t95 * se),
+        "n_clusters": t["n_blocks"],
+        "mean_diff": t["mean_diff"],
+        "se_clustered": t["se_cr1"],
+        "ci90_clustered": t["ci90"],
+        "p_tost": t["p_tost"],
+        "equivalent": t["equivalent"],
+        "smallest_passing_sesoi": t["smallest_passing_sesoi"],
     }
 
 
@@ -84,17 +77,14 @@ def block(base_reach, infl_reach, base_ign, infl_ign, design_ids, keep_mask_sim)
 
 
 def main():
-    a_sv = load(BASE_SV, "avg_fake_cascade")
-    b_sv = load(INFL_SV, "avg_fake_cascade")
-    a_svd = load(BASE_SVD, "ignition_rate")
-    b_svd = load(INFL_SVD, "ignition_rate")
-    for x, y in ((a_sv, b_sv), (a_sv, a_svd), (a_sv, b_svd)):
-        assert np.array_equal(x["global_sim_id"].values, y["global_sim_id"].values)
-        assert np.array_equal(x["design_id"].values, y["design_id"].values)
-        assert np.allclose(x["loss"].values, y["loss"].values)
+    a = load(BASE_CSV, ["avg_fake_cascade", "ignition_rate"])
+    b = load(INFL_CSV, ["avg_fake_cascade", "ignition_rate"])
+    assert np.array_equal(a["global_sim_id"].values, b["global_sim_id"].values)
+    assert np.array_equal(a["design_id"].values, b["design_id"].values)
+    assert np.allclose(a["loss"].values, b["loss"].values)
 
     # loss is constant within each design point and matches design.csv (row i-1 for design_id i)
-    per_design_loss = a_sv.groupby("design_id")["loss"].agg(["min", "max"])
+    per_design_loss = a.groupby("design_id")["loss"].agg(["min", "max"])
     assert (per_design_loss["min"] == per_design_loss["max"]).all()
     design = pd.read_csv(DESIGN, usecols=["loss"])
     assert len(design) == N_CLUSTERS
@@ -102,13 +92,13 @@ def main():
 
     loss_by_design = per_design_loss["min"]
     edge_designs = loss_by_design.index[loss_by_design.values < EDGE]
-    keep_sims = ~a_sv["design_id"].isin(edge_designs).values
+    keep_sims = ~a["design_id"].isin(edge_designs).values
 
-    base_reach_dids = a_sv["design_id"].values
-    base_reach = a_sv["avg_fake_cascade"].values
-    infl_reach = b_sv["avg_fake_cascade"].values
-    base_ign = a_svd["ignition_rate"].values
-    infl_ign = b_svd["ignition_rate"].values
+    base_reach_dids = a["design_id"].values
+    base_reach = a["avg_fake_cascade"].values
+    infl_reach = b["avg_fake_cascade"].values
+    base_ign = a["ignition_rate"].values
+    infl_ign = b["ignition_rate"].values
 
     full = block(base_reach, infl_reach, base_ign, infl_ign, base_reach_dids, np.ones(N_PAIRS, dtype=bool))
     excl = block(base_reach, infl_reach, base_ign, infl_ign, base_reach_dids, keep_sims)
@@ -116,12 +106,12 @@ def main():
     # gates: the full-design numbers must reproduce the published values
     assert abs(full["ignition_mean_baseline"] - 0.39552) < 5e-4
     assert abs(full["ignition_mean_influencer"] - 0.35075) < 5e-4
-    assert abs(full["reach_mean_baseline"] - 0.22555) < 5e-5
-    assert abs(full["reach_mean_influencer"] - 0.22817) < 5e-5
+    assert abs(full["reach_mean_baseline"] - data_io.PUBLISHED_MEANS[0]) < 5e-5
+    assert abs(full["reach_mean_influencer"] - data_io.PUBLISHED_MEANS[1]) < 5e-5
 
     evidence = {
         "generated_for": "Tier A-13/U2 near-edge robustness, POSITIONING_REVIEW_2026-07-02",
-        "inputs": [BASE_SV, INFL_SV, BASE_SVD, INFL_SVD, DESIGN],
+        "inputs": [BASE_CSV, INFL_CSV, DESIGN],
         "g_fixed": 1.0,
         "loss_min_sampled": float(loss_by_design.min()),
         "edge_threshold": EDGE,

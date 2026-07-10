@@ -55,7 +55,7 @@ import data_io
 OUT_DIR = data_io.MEANFIELD_DIR
 
 # fixed model constants (Table tab:params; run_sobol_sweep in the Julia runners)
-N_AGENTS = 300
+N_AGENTS = data_io.N_NODES
 M_EDGES = 3
 P_TRIAD = 0.5
 G_REP = 1.0                  # reputational gain g
@@ -422,10 +422,9 @@ def main():
     print(f"  <k>={deg_stats['mean_degree']:.3f}  kmax={deg_stats['max_degree']}  "
           f"hub pool <k>={deg_stats['hub_pool_mean_degree']:.2f}")
 
-    cols = ["global_sim_id", "design_id", "v_cost", "loss", "tpr", "fpr", "p_fake",
-            "rationality", "loss_aversion", "avg_fake_cascade", "avg_true_cascade"]
+    cols = ["global_sim_id", "design_id", *data_io.FACTORS, "avg_fake_cascade", "avg_true_cascade"]
     base, infl = data_io.load_seeding_pairs(cols)
-    factors = ["v_cost", "loss", "tpr", "fpr", "p_fake", "rationality", "loss_aversion"]
+    factors = data_io.FACTORS
     gb = base.groupby("design_id")
     design = gb[factors].first().reset_index()
     assert len(design) == data_io.N_DESIGNS

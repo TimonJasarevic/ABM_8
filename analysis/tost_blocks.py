@@ -52,7 +52,7 @@ OLD_PROFILE_JSON = os.path.join(data_io.RUNS_DIR, "tost_profile_2026_07_03", "pr
 OUT = os.path.join(data_io.RUNS_DIR, "tost_blocks_2026_07_04")
 
 COLS = ["global_sim_id", "design_id", "rep_id", "p_fake", "rationality", "avg_fake_cascade"]
-SESOI, ALPHA = 0.05, 0.05
+SESOI, ALPHA = data_io.SESOI, 0.05
 
 # within-block offsets carrying the A row's value vs the B row's value, per factor
 # (offset = (design_id-1) % 16; layout [A, AB_1..7, BA_1..7, B]; p_fake = factor 5,
@@ -95,6 +95,11 @@ def crosscheck_csv_sources(a, b):
     """The _sv CSVs are the reproducibility source of record (their means are the published
     gate); the plain sweep directories hold the same table. Assert bit-identity on every used column
     so either source supports the numbers (A5)."""
+    if not (os.path.exists(BASE_CSV_PLAIN) and os.path.exists(INFL_CSV_PLAIN)):
+        # Plain sweep views are omitted from the trimmed reproduction package; the _sv CSVs are
+        # the source of record, so skip the (optional) bit-identity crosscheck rather than error.
+        print("crosscheck_csv_sources: plain sweep CSVs not bundled -- skipping A5 bit-identity check", flush=True)
+        return {"skipped": "plain sweep CSVs not bundled in this package"}
     out = {}
     for label, sv_frame, plain_path in (("baseline", a, BASE_CSV_PLAIN),
                                         ("influencer", b, INFL_CSV_PLAIN)):
