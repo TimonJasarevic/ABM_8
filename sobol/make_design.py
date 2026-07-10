@@ -13,8 +13,8 @@ power-of-two base size N; first+total(+second) order indices at a cost of N(2k+2
 model evaluations (Saxton et al. 2024; SALib docs). Sobol-sequence sampling is
 preferred over Latin Hypercube for index estimation.
 
-Verified against the project's `ABM` conda env (SALib 1.4.8):
-    conda run -n ABM python sobol/make_design.py --N 1024
+Verified in the Sobol-SA environment (numpy<2, see requirements.txt; SALib 1.4.8):
+    python sobol/make_design.py --N 1024
 """
 import argparse
 import json

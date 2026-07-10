@@ -11,15 +11,15 @@ Only two columns of cascades.arrow are projected, which still needs roughly 16-2
 full sweep size; run it on a machine that holds the sweep (a Snellius node for the cluster sweeps).
 On Snellius:
     ~/fnp-venv/bin/python sobol/augment_sv.py <sweep_dir> [out_dir]
-locally (needs pandas + pyarrow, e.g. the mzungu env):
-    conda run -n mzungu python sobol/augment_sv.py <sweep_dir> [out_dir]
+locally (needs pandas + pyarrow; use the main analysis environment, see requirements.txt):
+    python sobol/augment_sv.py <sweep_dir> [out_dir]
 
 <sweep_dir> must be a WRITE_FULL sweep whose cascades.arrow carries a structural_virality column;
 sweeps that predate the metric are rejected. The augmented simulations.csv is written to [out_dir]
 (default: <sweep_dir>_sv, leaving the original sweep untouched; pass the sweep dir itself to
 overwrite in place). avg_structural_virality is one of sobol/analyze.py's OUTPUTS, so the
-follow-up is:
-    conda run -n ABM python sobol/analyze.py --sweep <out_dir> --out sobol/results/<tag>
+follow-up, run in the Sobol-SA environment (numpy<2, see requirements.txt), is:
+    python sobol/analyze.py --sweep <out_dir> --out sobol/results/<tag>
 """
 import os
 import sys
