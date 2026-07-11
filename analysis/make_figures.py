@@ -364,12 +364,16 @@ def fig_fake_reach_profile(ev):
     ax.axhline(0, color="black", lw=1.0)
     ax.axhline(sesoi, color=GREY, ls="--", lw=1.2)
     ax.axhline(-sesoi, color=GREY, ls="--", lw=1.2, label=f"equivalence bounds ($\\pm${sesoi:g})")
+    # the superseded design-point CIs are anchor overlays that only the canonical run carries
+    has_old = all("old_designpoint" in s for s in pf + lam)
     for s in pf:
-        ax.plot([s["midpoint"] + 0.012] * 2, s["old_designpoint"]["ci90_clustered"],
-                color=GREY, lw=1.4, solid_capstyle="round")
+        if has_old:
+            ax.plot([s["midpoint"] + 0.012] * 2, s["old_designpoint"]["ci90_clustered"],
+                    color=GREY, lw=1.4, solid_capstyle="round")
         ax.plot([s["midpoint"]] * 2, s["ci90"], color="black", lw=3.0,
                 solid_capstyle="round")
-    ax.plot([], [], color=GREY, lw=1.4, label="design-point 90% CI (superseded)")
+    if has_old:
+        ax.plot([], [], color=GREY, lw=1.4, label="design-point 90% CI (superseded)")
     ax.plot(x, [s["mean_diff"] for s in pf], "s", color="black", ms=6,
             label="mean difference (block-clustered 90% CI)")
     ax.set_ylim(-0.06, 0.06)
@@ -388,8 +392,9 @@ def fig_fake_reach_profile(ev):
     axl.axhline(sesoi, color=GREY, ls="--", lw=1.2)
     axl.axhline(-sesoi, color=GREY, ls="--", lw=1.2)
     for s in lam:
-        axl.plot([s["midpoint"] + 0.035] * 2, s["old_designpoint"]["ci90_clustered"],
-                 color=GREY, lw=1.4, solid_capstyle="round")
+        if has_old:
+            axl.plot([s["midpoint"] + 0.035] * 2, s["old_designpoint"]["ci90_clustered"],
+                     color=GREY, lw=1.4, solid_capstyle="round")
         axl.plot([s["midpoint"]] * 2, s["ci90"], color="black", lw=3.0,
                  solid_capstyle="round")
     axl.plot(xl, [s["mean_diff"] for s in lam], "s", color="black", ms=6)

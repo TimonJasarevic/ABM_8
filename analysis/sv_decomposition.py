@@ -402,14 +402,18 @@ def cmd_reduce(args):
         col = pd.read_csv(p, usecols=["avg_structural_virality"])["avg_structural_virality"]
         csv_means[lab] = float(col.mean())
     checks = {}
+    # published-value comparisons only apply to the canonical full sweep; scaled runs keep
+    # the scale-free internal-consistency parts of V1/V2
     checks["V1_reproduction"] = all(
         abs(agg[lab]["grand_mean_sv"] - csv_means[lab]) < 1e-6 for lab in ARM_LABELS
-    ) and abs(agg["baseline"]["grand_mean_sv"] - 1.80253) < 1e-3 \
-      and abs(agg["influencer"]["grand_mean_sv"] - 1.5689) < 1e-3
+    ) and (not data_io.CANONICAL
+           or (abs(agg["baseline"]["grand_mean_sv"] - 1.80253) < 1e-3
+               and abs(agg["influencer"]["grand_mean_sv"] - 1.5689) < 1e-3))
     checks["V2_zero_pooling_identity"] = all(
         agg[lab]["n_sv_zero"] == agg[lab]["n_size1"] for lab in ARM_LABELS
-    ) and abs(agg["baseline"]["size1_share"] - 0.6045) < 0.005 \
-      and abs(agg["baseline"]["cond_mean_sv"] - 4.557) < 0.01
+    ) and (not data_io.CANONICAL
+           or (abs(agg["baseline"]["size1_share"] - 0.6045) < 0.005
+               and abs(agg["baseline"]["cond_mean_sv"] - 4.557) < 0.01))
     mdeg_b = agg["baseline"]["mean_seed_degree"]
     mdeg_i = agg["influencer"]["mean_seed_degree"]
     checks["V3_provenance"] = (mdeg_i >= 3 * mdeg_b and abs(mdeg_i - 27.4) <= 3
@@ -470,10 +474,13 @@ def cmd_reduce(args):
     if args.write_sobol_csv:
         for lab, src in (("baseline", args.baseline_csv), ("influencer", args.influencer_csv)):
             sim = pd.read_csv(src)
+            sim = sim.drop(columns=["ignition_rate", "cond_sv"], errors="ignore")  # idempotent
             add = per_sim[["global_sim_id", f"ignition_{lab}", f"cond_sv_{lab}"]].rename(
                 columns={f"ignition_{lab}": "ignition_rate", f"cond_sv_{lab}": "cond_sv"})
             sim = sim.merge(add, on="global_sim_id", how="left")
-            dst_dir = os.path.dirname(src).replace("_sv", "_svd")
+            src_dir = os.path.dirname(src)
+            # legacy _sv views got a sibling _svd dir; an already-_svd source is augmented in place
+            dst_dir = src_dir if src_dir.endswith("_svd") else src_dir.replace("_sv", "_svd")
             os.makedirs(dst_dir, exist_ok=True)
             dst = os.path.join(dst_dir, "simulations.csv")
             sim.to_csv(dst, index=False)

@@ -103,11 +103,13 @@ def main():
     full = block(base_reach, infl_reach, base_ign, infl_ign, base_reach_dids, np.ones(N_PAIRS, dtype=bool))
     excl = block(base_reach, infl_reach, base_ign, infl_ign, base_reach_dids, keep_sims)
 
-    # gates: the full-design numbers must reproduce the published values
-    assert abs(full["ignition_mean_baseline"] - 0.39552) < 5e-4
-    assert abs(full["ignition_mean_influencer"] - 0.35075) < 5e-4
-    assert abs(full["reach_mean_baseline"] - data_io.PUBLISHED_MEANS[0]) < 5e-5
-    assert abs(full["reach_mean_influencer"] - data_io.PUBLISHED_MEANS[1]) < 5e-5
+    # gates: the full-design numbers must reproduce the published values; only the
+    # canonical sweep can satisfy them, so scaled runs skip the comparison
+    if data_io.CANONICAL:
+        assert abs(full["ignition_mean_baseline"] - 0.39552) < 5e-4
+        assert abs(full["ignition_mean_influencer"] - 0.35075) < 5e-4
+        assert abs(full["reach_mean_baseline"] - data_io.PUBLISHED_MEANS[0]) < 5e-5
+        assert abs(full["reach_mean_influencer"] - data_io.PUBLISHED_MEANS[1]) < 5e-5
 
     evidence = {
         "generated_for": "Tier A-13/U2 near-edge robustness, POSITIONING_REVIEW_2026-07-02",

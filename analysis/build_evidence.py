@@ -54,7 +54,7 @@ from paired_stats import g3, _clustered_family, paired_cmp, paired_inf
 from utils import sen_welfare, belief_dispersion, dip_test, bimodality_coefficient, \
     flexible_calibration, bh_fdr, tost_paired
 
-OUT_DIR = data_io.ANALYSIS_DIR                 # the three evidence JSONs land next to make_figures.py
+OUT_DIR = data_io.EVIDENCE_DIR                 # analysis/ canonically; the run root for scaled runs
 DEFAULT_BASELINE = data_io.BASELINE_SWEEP      # uniform-random seeding (run_experiment_baseline.jl)
 DEFAULT_INFLUENCER = data_io.INFLUENCER_SWEEP  # top-degree hub seeding
 
@@ -435,7 +435,8 @@ def cmd_stream_influencer(args):
           f"{unique_seeds_per_sim.min()}/{unique_seeds_per_sim.mean():.3f}/{unique_seeds_per_sim.max()}", flush=True)
 
     # ---- pass 2: nodes -> per-(sim,group) means (paired) + held per-group arrays (pooled) + mm rows ----
-    keep = np.random.default_rng(0).choice(np.arange(1, N_SIMS + 1), 300, replace=False)   # mixed-model subsample
+    keep = np.random.default_rng(0).choice(np.arange(1, N_SIMS + 1), min(300, N_SIMS),
+                                            replace=False)   # mixed-model subsample
     nbatch, nn = open_arrow(os.path.join(B, "nodes.arrow"))
     if args.max_rows is not None:
         nn = min(nn, args.max_rows)

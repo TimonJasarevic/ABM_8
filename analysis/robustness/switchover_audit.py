@@ -132,7 +132,8 @@ def _per_dp(acc, csv_path, mean_gate):
               f"rec {rec_fake[i]:.9f} csv {csv['avg_fake_cascade'].values[i]:.9f}")
         sys.exit(2)
     m = float(rec_fake.mean())
-    assert abs(m - mean_gate) < 5e-5, (m, mean_gate)                                   # S5
+    if mean_gate is not None:  # published-mean gate; only the canonical sweep can satisfy it
+        assert abs(m - mean_gate) < 5e-5, (m, mean_gate)                               # S5
 
     P = acc["n_fake_ign"] / nf
     A = (acc["sum_size_fake_ign"] - acc["n_fake_ign"]) / (SIZE_MAX * nf)
@@ -173,13 +174,17 @@ def _bin_arm(dp_arm, mask):
     P_bar = float(sub["P"].mean())
     A_bar = float(sub["A"].mean())
     reach = float(sub["reach"].mean())
+    P_true = float(sub["P_true"].mean())
     assert abs((A_bar + REACH_FLOOR) - reach) < 1e-12
+    # C_tilde is undefined when nothing ignites in the bin; possible only for the thin
+    # bins of scaled runs (every canonical bin ignites), so report NaN instead of failing
     return {
         "P_ign_fake": P_bar,
-        "C_tilde_fake": A_bar / P_bar + REACH_FLOOR,
+        "C_tilde_fake": A_bar / P_bar + REACH_FLOOR if P_bar > 0 else float("nan"),
         "reach_fake": reach,
-        "P_ign_true": float(sub["P_true"].mean()),
-        "C_tilde_true": float(sub["A_true"].mean()) / float(sub["P_true"].mean()) + REACH_FLOOR,
+        "P_ign_true": P_true,
+        "C_tilde_true": (float(sub["A_true"].mean()) / P_true + REACH_FLOOR
+                         if P_true > 0 else float("nan")),
         "reach_true": float(sub["reach_true"].mean()),
     }
 
@@ -193,7 +198,9 @@ def _decompose(base, infl):
     ign = dP * (mid_C - REACH_FLOOR)
     cond = dC * mid_P
     resid = d_reach - ign - cond
-    assert abs(resid) < 1e-12, resid                                                   # S7
+    # the identity is exact wherever C_tilde is defined; NaN components (empty scaled
+    # bins) make the residual NaN, which is reported rather than asserted
+    assert not np.isfinite(resid) or abs(resid) < 1e-12, resid                         # S7
     return {
         "d_reach": d_reach, "delta_P": dP, "delta_C_tilde": dC,
         "ignition_component": ign, "conditional_component": cond,
@@ -208,19 +215,42 @@ def _ci(entry):
                                   "p_zero_two_sided", "n_design_points", "n_blocks")}
 
 
+def _ci_or_stub(values, blocks):
+    """_ci(tost_clustered(...)), or a NaN-interval stub when fewer than two Saltelli blocks
+    back the selection. Only scaled runs can be that thin; the canonical design backs every
+    bin with >= 200 blocks."""
+    values = np.asarray(values, dtype=float)
+    n_blocks = int(pd.unique(np.asarray(blocks)).size)
+    if data_io.CANONICAL or n_blocks >= 2:
+        return _ci(tost_clustered(values, blocks, expect_sizes=ALL_CELLS))
+    nan = float("nan")
+    return {"mean_diff": float(values.mean()) if len(values) else nan, "se_cr1": nan,
+            "ci90": [nan, nan], "ci95": [nan, nan], "p_zero_two_sided": 1.0,
+            "n_design_points": int(len(values)), "n_blocks": n_blocks,
+            "skipped_tost": "fewer than 2 Saltelli blocks at this scale"}
+
+
 def cmd_reduce(args):
     t0 = time.time()
     acc_b = _load_acc(args.out, "baseline")
     acc_i = _load_acc(args.out, "influencer")
-    sim_b, dp_b, gates_b = _per_dp(acc_b, BASE_CSV, data_io.PUBLISHED_MEANS[0])
-    sim_i, dp_i, gates_i = _per_dp(acc_i, INFL_CSV, data_io.PUBLISHED_MEANS[1])
+    sim_b, dp_b, gates_b = _per_dp(acc_b, BASE_CSV,
+                                   data_io.PUBLISHED_MEANS[0] if data_io.CANONICAL else None)
+    sim_i, dp_i, gates_i = _per_dp(acc_i, INFL_CSV,
+                                   data_io.PUBLISHED_MEANS[1] if data_io.CANONICAL else None)
     assert np.array_equal(dp_b.index.values, dp_i.index.values)
     assert np.allclose(dp_b["p_fake"].values, dp_i["p_fake"].values)
 
-    with open(os.path.join(data_io.RUNS_DIR, "tost_profile",
-                           "profile_evidence.json")) as f:
-        old_profile = json.load(f)
-    old_bins = {s["bin"]: s for s in old_profile["pfake_bins"]}
+    profile_json = os.path.join(data_io.RUNS_DIR, "tost_profile", "profile_evidence.json")
+    if os.path.exists(profile_json):
+        with open(profile_json) as f:
+            old_profile = json.load(f)
+        old_bins = {s["bin"]: s for s in old_profile["pfake_bins"]}
+    else:
+        # Scaled runs carry no superseded full-scale anchor analysis; the S6 anchor
+        # cross-checks are vacuous there and are skipped rather than failed.
+        old_profile, old_bins = None, {}
+        print("tost_profile anchor absent -- skipping S6 anchor cross-checks", flush=True)
 
     # complete-pair rep-level conditional-reach differences -> per-dp means
     both = np.isfinite(sim_b["C"].values) & np.isfinite(sim_i["C"].values)
@@ -249,25 +279,24 @@ def cmd_reduce(args):
             "baseline": base, "influencer": infl,
             "decomposition": dec,
             "delta_ci": {
-                "P_ign_fake": _ci(tost_clustered(dP_dp, blk, expect_sizes=ALL_CELLS)),
-                "A_fake": _ci(tost_clustered(dA_dp, blk, expect_sizes=ALL_CELLS)),
-                "C_completepairs": _ci(tost_clustered(dc[dc_ok], blk[dc_ok],
-                                                      expect_sizes=ALL_CELLS)) | {
+                "P_ign_fake": _ci_or_stub(dP_dp, blk),
+                "A_fake": _ci_or_stub(dA_dp, blk),
+                "C_completepairs": _ci_or_stub(dc[dc_ok], blk[dc_ok]) | {
                     "n_dp_used": int(dc_ok.sum()),
                     "n_dp_dropped": int((~dc_ok).sum())},
-                "P_ign_true": _ci(tost_clustered((dp_i["P_true"] - dp_b["P_true"]).values[mask],
-                                                 blk, expect_sizes=ALL_CELLS)),
+                "P_ign_true": _ci_or_stub((dp_i["P_true"] - dp_b["P_true"]).values[mask], blk),
             },
         }
         return entry
 
     overall = bin_entry(np.ones(N_DESIGNS, dtype=bool), "overall",
-                        old_profile["overall"]["mean_diff"])
+                        old_profile["overall"]["mean_diff"] if old_profile else None)
     pfake_bins = []
     for iv in pf_bin.cat.categories:
         label = f"({iv.left:.2f}, {iv.right:.2f}]"
         mask = (pf_bin == iv).values
-        pfake_bins.append(bin_entry(mask, label, old_bins[label]["mean_diff"]))
+        old_md = old_bins[label]["mean_diff"] if label in old_bins else None
+        pfake_bins.append(bin_entry(mask, label, old_md))
 
     low = pfake_bins[0]
     dec = low["decomposition"]
@@ -321,7 +350,7 @@ def cmd_reduce(args):
         "config": {"n_sims": N_SIMS, "n_per_sim": N_PER_SIM, "chunk": CHUNK,
                    "size_max": SIZE_MAX, "reach_floor": REACH_FLOOR,
                    "pfake_edges": PFAKE_EDGES.tolist(),
-                   "block_definition": "(design_id-1)//16, 1024 Saltelli base blocks"},
+                   "block_definition": f"(design_id-1)//{BLOCK}, {N_BLOCKS} Saltelli base blocks"},
         "identity": "per sim: reach = A + 1/300 with A = (sum_size_ign - n_ign)/(300 n_fake); "
                     "per bin: d_reach = dP.[(C~_B+C~_I)/2 - 1/300] + dC~.(P_B+P_I)/2 with "
                     "C~ = A_bar/P_bar + 1/300 (exact, residual asserted < 1e-12)",

@@ -17,6 +17,21 @@ DATA_DIR = os.path.join(REPO_ROOT, "data")
 RUNS_DIR = os.path.join(ANALYSIS_DIR, "runs")
 SOBOL_DIR = os.path.join(REPO_ROOT, "sobol")
 DESIGN_CSV = os.path.join(SOBOL_DIR, "design.csv")
+EVIDENCE_DIR = ANALYSIS_DIR                    # where build_evidence.py writes the three JSONs
+
+# ------------------------------------------------------------------ scaled-run isolation
+# FNP_RUN_ROOT points every path and design constant in this module at a self-contained
+# scaled run directory (created by run_experiment_scaled.jl via reproduce.sh). Unset, the
+# module describes the canonical published sweep. CANONICAL gates the exact-value
+# reproduction checks (published means), which only the full 491,520-pair sweep satisfies.
+RUN_ROOT = os.environ.get("FNP_RUN_ROOT")
+CANONICAL = RUN_ROOT is None
+if not CANONICAL:
+    RUN_ROOT = os.path.abspath(RUN_ROOT)
+    DATA_DIR = os.path.join(RUN_ROOT, "data")
+    RUNS_DIR = os.path.join(RUN_ROOT, "runs")
+    DESIGN_CSV = os.path.join(RUN_ROOT, "design.csv")
+    EVIDENCE_DIR = RUN_ROOT
 
 # Latest run dirs holding the evidence that make_figures.py renders the structural-virality,
 # equivalence, and switchover figures from (sv_decomposition.py / tost_blocks.py / switchover_audit.py).
@@ -29,14 +44,38 @@ NODECACHE_DIR = os.path.join(RUNS_DIR, "nodecache")
 
 # The two paired sweeps (uniform-random vs top-degree hub seeding); identical Saltelli
 # design and per-simulation seeds, so simulations match one-to-one on global_sim_id.
+# The canonical bundled per-sim tables ship gzipped; scaled runs write plain CSVs.
 BASELINE_SWEEP = os.path.join(DATA_DIR, "baseline")
 INFLUENCER_SWEEP = os.path.join(DATA_DIR, "influencer")
-BASELINE_SVD_CSV = os.path.join(DATA_DIR, "baseline_svd", "simulations.csv.gz")
-INFLUENCER_SVD_CSV = os.path.join(DATA_DIR, "influencer_svd", "simulations.csv.gz")
+
+
+def _csv_or_gz(path):
+    return path if os.path.exists(path) or not os.path.exists(path + ".gz") else path + ".gz"
+
+
+BASELINE_SVD_CSV = _csv_or_gz(os.path.join(DATA_DIR, "baseline_svd", "simulations.csv"))
+INFLUENCER_SVD_CSV = _csv_or_gz(os.path.join(DATA_DIR, "influencer_svd", "simulations.csv"))
 
 # ------------------------------------------------------------------ design constants
-N_PAIRS, N_DESIGNS, N_BLOCKS = 491_520, 16_384, 1_024
-BLOCK, REPS, PAIRS_PER_BLOCK = 16, 30, 480
+# Canonical scale: Saltelli base sample N=1024, k=7 factors -> N(2k+2)=16,384 design
+# points x 30 replicates. A scaled run derives the same quantities from its own sliced
+# problem.json (N, n_rows, k) and run_meta.json (num_reps); the factor count, and with it
+# BLOCK = 2k+2 = 16, never changes.
+if CANONICAL:
+    N_PAIRS, N_DESIGNS, N_BLOCKS = 491_520, 16_384, 1_024
+    BLOCK, REPS, PAIRS_PER_BLOCK = 16, 30, 480
+else:
+    import json as _json
+    with open(os.path.join(RUN_ROOT, "problem.json")) as _fh:
+        _prob = _json.load(_fh)
+    with open(os.path.join(RUN_ROOT, "run_meta.json")) as _fh:
+        _meta = _json.load(_fh)
+    N_BLOCKS, N_DESIGNS = int(_prob["N"]), int(_prob["n_rows"])
+    BLOCK = 2 * int(_prob["k"]) + 2
+    assert N_DESIGNS == N_BLOCKS * BLOCK, (N_DESIGNS, N_BLOCKS, BLOCK)
+    REPS = int(_meta["num_reps"])
+    assert REPS >= 2, "the deterministic/stochastic decomposition needs >= 2 replicates"
+    N_PAIRS, PAIRS_PER_BLOCK = N_DESIGNS * REPS, BLOCK * REPS
 N_NODES = 300                                         # agents per simulation = network size (Julia N_AGENTS)
 N_CASC_PER_SIM = 1000                                 # recorded post-burn-in cascades per simulation
 SESOI = 0.05                                          # fake-news reach equivalence band, raw units (TOST)
@@ -57,15 +96,16 @@ def load_seeding_pairs(cols, base_csv=BASELINE_SVD_CSV, infl_csv=INFLUENCER_SVD_
 
     Returns ``(a, b)`` sorted/reset DataFrames after the common-random-number alignment asserts
     (equal length N_PAIRS; identical global_sim_id and design_id vectors) and, when
-    ``check_means``, the published-mean gate on ``avg_fake_cascade``. ``cols`` must include
-    ``global_sim_id``, ``design_id``, and ``avg_fake_cascade``.
+    ``check_means``, the published-mean gate on ``avg_fake_cascade``. The gate is meaningful
+    only for the canonical full sweep and is skipped for scaled runs (CANONICAL False).
+    ``cols`` must include ``global_sim_id``, ``design_id``, and ``avg_fake_cascade``.
     """
     a = pd.read_csv(base_csv, usecols=cols).sort_values("global_sim_id").reset_index(drop=True)
     b = pd.read_csv(infl_csv, usecols=cols).sort_values("global_sim_id").reset_index(drop=True)
     assert len(a) == len(b) == N_PAIRS, (len(a), len(b))
     assert np.array_equal(a["global_sim_id"].values, b["global_sim_id"].values)
     assert np.array_equal(a["design_id"].values, b["design_id"].values)
-    if check_means:
+    if check_means and CANONICAL:
         mb, mi = float(a["avg_fake_cascade"].mean()), float(b["avg_fake_cascade"].mean())
         assert abs(mb - PUBLISHED_MEANS[0]) < MEAN_TOL and abs(mi - PUBLISHED_MEANS[1]) < MEAN_TOL, (mb, mi)
     return a, b

@@ -205,34 +205,58 @@ def variance_components(d, design_ids):
             "sigma2_block": s2_blk, "sigma2_designpoint": s2_dp, "sigma2_replication": s2_rep,
             "icc_designpoint_level": (max(s2_blk, 0.0) + max(s2_dp, 0.0)) / total,
             "icc_block_level": max(s2_blk, 0.0) / total,
-            "note": "method-of-moments on the balanced 1024x16x30 nesting; sigma2 reported raw "
-                    "(negative estimates possible) with ICCs from clipped components",
+            "note": f"method-of-moments on the balanced {N_BLOCKS}x{BLOCK}x{REPS} nesting; "
+                    "sigma2 reported raw (negative estimates possible) with ICCs from "
+                    "clipped components",
         },
     }
 
 
-def profile(dp, old_tost, old_profile):
-    overall = tost_clustered(dp["diff"].values, dp["block"].values, sesoi=SESOI, alpha=ALPHA,
-                             expect_sizes={16})
-    assert abs(overall["mean_diff"] - old_tost["mean_diff"]) < 1e-12                     # A10
-    # balanced-case identity: CR1 == block-mean t
-    assert abs(overall["se_cr1"] - overall["cellmeans_sensitivity"]["se"]) < 1e-15 * 1e6
+def _tost_or_stub(values, blocks, expect_sizes):
+    """tost_clustered, or an untestable stub when fewer than two Saltelli blocks back the
+    selection. Only scaled runs can be that thin (the canonical design backs every reported
+    bin with >= 200 blocks); the stub keeps the full result schema with NaN interval fields
+    and p = 1 (untestable implies not equivalent), so FDR, printing, and figures flow."""
+    values = np.asarray(values, dtype=float)
+    n_blocks = int(np.unique(np.asarray(blocks)).size)
+    if data_io.CANONICAL or n_blocks >= 2:
+        return tost_clustered(values, blocks, sesoi=SESOI, alpha=ALPHA,
+                              expect_sizes=expect_sizes)
+    md, nan = float(values.mean()) if len(values) else float("nan"), float("nan")
+    return {"n_design_points": int(len(values)), "n_blocks": n_blocks,
+            "cluster_sizes": [int(len(values))] if len(values) else [],
+            "mean_diff": md, "se_cr1": nan, "df": 0,
+            "ci90": [nan, nan], "ci95": [nan, nan],
+            "p_lower": 1.0, "p_upper": 1.0, "p_tost": 1.0, "equivalent": False,
+            "smallest_passing_sesoi": nan, "p_zero_two_sided": 1.0,
+            "cellmeans_sensitivity": {"mean_diff": md, "se": nan, "ci90": [nan, nan]},
+            "skipped_tost": "fewer than 2 Saltelli blocks at this scale"}
 
-    old_bins = {s["bin"]: s for s in old_profile["pfake_bins"]}
+
+def profile(dp, old_tost, old_profile):
+    overall = _tost_or_stub(dp["diff"].values, dp["block"].values, expect_sizes={16})
+    if old_tost is not None:
+        assert abs(overall["mean_diff"] - old_tost["mean_diff"]) < 1e-12                 # A10
+    if "skipped_tost" not in overall:
+        # balanced-case identity: CR1 == block-mean t
+        assert abs(overall["se_cr1"] - overall["cellmeans_sensitivity"]["se"]) < 1e-15 * 1e6
+
+    old_bins = {s["bin"]: s for s in old_profile["pfake_bins"]} if old_profile else {}
     pf_bin = pd.cut(dp["p_fake"], PFAKE_EDGES, include_lowest=True)
     assert not pf_bin.isna().any()                                                       # A13
     pfake_bins = []
     for iv, grp in dp.groupby(pf_bin, observed=True):
-        s = tost_clustered(grp["diff"].values, grp["block"].values, sesoi=SESOI, alpha=ALPHA,
+        s = _tost_or_stub(grp["diff"].values, grp["block"].values,
                            expect_sizes={8, 16})
         s["bin"] = f"({iv.left:.2f}, {iv.right:.2f}]"
         s["midpoint"] = float((iv.left + iv.right) / 2)
         s["base_reach_mean"] = float(grp["base_reach"].mean())
-        old = old_bins[s["bin"]]
-        assert s["n_design_points"] == old["n_clusters"]                                 # A11
-        assert abs(s["mean_diff"] - old["mean_diff"]) < 1e-9                             # A11
-        s["se_inflation_vs_designpoint"] = s["se_cr1"] / old["se_clustered"]
-        s["old_designpoint"] = old
+        old = old_bins.get(s["bin"])
+        if old is not None:
+            assert s["n_design_points"] == old["n_clusters"]                             # A11
+            assert abs(s["mean_diff"] - old["mean_diff"]) < 1e-9                         # A11
+            s["se_inflation_vs_designpoint"] = s["se_cr1"] / old["se_clustered"]
+            s["old_designpoint"] = old
         pfake_bins.append(s)
     wsum = sum(s["n_design_points"] * s["mean_diff"] for s in pfake_bins)
     assert abs(wsum / N_DESIGNS - overall["mean_diff"]) < 1e-12                          # A12
@@ -240,28 +264,31 @@ def profile(dp, old_tost, old_profile):
     slices = {}
     for cut, old_key in ((0.15, "p_fake<=0.15"), (0.30, "p_fake<=0.3")):
         sub = dp[dp["p_fake"] <= cut]
-        s = tost_clustered(sub["diff"].values, sub["block"].values, sesoi=SESOI, alpha=ALPHA,
+        s = _tost_or_stub(sub["diff"].values, sub["block"].values,
                            expect_sizes={8, 16})
-        old = old_profile["pfake_slices"][old_key]
-        assert s["n_design_points"] == old["n_clusters"]                                 # A11
-        assert abs(s["mean_diff"] - old["mean_diff"]) < 1e-9                             # A11
+        old = old_profile["pfake_slices"][old_key] if old_profile else None
+        if old is not None:
+            assert s["n_design_points"] == old["n_clusters"]                             # A11
+            assert abs(s["mean_diff"] - old["mean_diff"]) < 1e-9                         # A11
+            s["old_designpoint"] = old
         s["base_reach_mean"] = float(sub["base_reach"].mean())
-        s["old_designpoint"] = old
         slices[f"p_fake<={cut}"] = s
 
     lam_bin = pd.cut(dp["log10_lambda"], LAMBDA_EDGES, include_lowest=True)
     assert not lam_bin.isna().any()                                                      # A13
     lambda_bins = []
-    old_lam = {s["bin"]: s for s in old_profile["lambda_bins"]}
+    old_lam = {s["bin"]: s for s in old_profile["lambda_bins"]} if old_profile else {}
     for iv, grp in dp.groupby(lam_bin, observed=True):
-        s = tost_clustered(grp["diff"].values, grp["block"].values, sesoi=SESOI, alpha=ALPHA,
+        s = _tost_or_stub(grp["diff"].values, grp["block"].values,
                            expect_sizes={8, 16})
         s["bin"] = f"({iv.left:.0f}, {iv.right:.0f}]"
         s["midpoint"] = float((iv.left + iv.right) / 2)
-        assert s["n_design_points"] == 4096                                              # A13
-        old = old_lam[s["bin"]]
-        assert abs(s["mean_diff"] - old["mean_diff"]) < 1e-9                             # A11
-        s["old_designpoint"] = old
+        if data_io.CANONICAL:  # exact quarter balance is a property of the full design
+            assert s["n_design_points"] == N_DESIGNS // 4                                # A13
+        old = old_lam.get(s["bin"])
+        if old is not None:
+            assert abs(s["mean_diff"] - old["mean_diff"]) < 1e-9                         # A11
+            s["old_designpoint"] = old
         lambda_bins.append(s)
     wsum_lam = sum(s["n_design_points"] * s["mean_diff"] for s in lambda_bins)
     assert abs(wsum_lam / N_DESIGNS - overall["mean_diff"]) < 1e-12                      # A12
@@ -307,10 +334,16 @@ def verifier_crosschecks(overall, pfake_bins, ladder):
 
 
 def main():
-    with open(OLD_TOST_JSON) as f:
-        old_tost = json.load(f)
-    with open(OLD_PROFILE_JSON) as f:
-        old_profile = json.load(f)
+    if os.path.exists(OLD_TOST_JSON) and os.path.exists(OLD_PROFILE_JSON):
+        with open(OLD_TOST_JSON) as f:
+            old_tost = json.load(f)
+        with open(OLD_PROFILE_JSON) as f:
+            old_profile = json.load(f)
+    else:
+        # Scaled runs carry no superseded full-scale anchor analyses; the A10/A11 anchor
+        # cross-checks are vacuous there and are skipped rather than failed.
+        old_tost = old_profile = None
+        print("anchor JSONs absent -- skipping A10/A11 anchor cross-checks", flush=True)
 
     a, b, d, mb, mi = load_pairs()
     csv_check = crosscheck_csv_sources(a, b)
@@ -342,8 +375,13 @@ def main():
               f"md {s['mean_diff']:+.5f}  CI90 [{s['ci90'][0]:+.5f}, {s['ci90'][1]:+.5f}]  "
               f"{'EQ' if s['equivalent'] else 'NOT-EQ'} q15={s['q_tost_fdr_by_15']:.3g}")
 
-    print("verifier cross-checks (external 2026-07-03 reproductions):")
-    checks = verifier_crosschecks(overall, pfake_bins, comps)
+    if data_io.CANONICAL:
+        print("verifier cross-checks (external 2026-07-03 reproductions):")
+        checks = verifier_crosschecks(overall, pfake_bins, comps)
+    else:
+        # The targets are external reproductions of the canonical full-scale numbers;
+        # a scaled run cannot and should not match them.
+        checks = {"skipped": "scaled run: full-scale reproduction targets do not apply"}
 
     evidence = {
         "generated_for": "block-level recompute superseding tost_clustered/tost_profile "
@@ -355,7 +393,10 @@ def main():
         },
         "metric": "avg_fake_cascade (fake-news reach, fraction of network)",
         "alpha": ALPHA, "sesoi": SESOI,
-        "sesoi_justification": old_tost["sesoi_justification"],
+        "sesoi_justification": old_tost["sesoi_justification"] if old_tost else
+                               "0.05 of the network = 5 percentage points of reach, about 22% of "
+                               "the baseline fake reach 0.226; the smallest displacement of "
+                               "fake-news reach regarded as policy relevant at N=300",
         "n_pairs": N_PAIRS, "n_design_points": N_DESIGNS, "n_blocks": N_BLOCKS,
         "reps_per_design_point": REPS, "design_points_per_block": BLOCK,
         "pairs_per_block": PAIRS_PER_BLOCK,
@@ -364,7 +405,7 @@ def main():
         "saltelli_structure": structure,
         "unit_of_analysis": "design-point-weighted mean difference with CR1 cluster-robust SE, "
                             "cluster = Saltelli base block ((design_id-1)//16), df = G-1; "
-                            "equals the one-sample t on the 1,024 block means under balance",
+                            f"equals the one-sample t on the {N_BLOCKS:,} block means under balance",
         "overall": overall,
         **comps,
         "pfake_bins": pfake_bins,
@@ -382,7 +423,8 @@ def main():
             s["equivalent_after_fdr"] for s in pfake_bins + lambda_bins)),
         "low_pfake_equivalent": bool(all(s["equivalent"] for s in slices.values())),
         "max_abs_bin_diff": max((abs(s["mean_diff"]), s["bin"]) for s in pfake_bins),
-        "old_designpoint_overall": old_tost | {"ci90_naive": old_tost["ci90_naive"]},
+        "old_designpoint_overall": (old_tost | {"ci90_naive": old_tost["ci90_naive"]}
+                                    if old_tost else None),
         "verifier_crosschecks": checks,
     }
     os.makedirs(OUT, exist_ok=True)

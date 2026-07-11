@@ -52,6 +52,46 @@ per-cascade Arrow tables (~174 GB) are not bundled; the optional `RUN_JULIA_SWEE
 `STREAM_FROM_ARROW=1` tiers of the script regenerate them from the model and re-stream the
 caches from them (see section A).
 
+## Re-running the simulation itself (scaled tiers)
+
+Full-fidelity re-simulation is HPC-scale (measured 4.5-5 h per seeding configuration on a
+192-core node; roughly two weeks on an 8-core laptop), so `reproduce.sh` offers scaled tiers
+that re-run the **unchanged model** at reduced sweep breadth and then push the reviewer's own
+sweep through the complete analysis chain:
+
+```bash
+bash reproduce.sh            # detects cores, prints ETAs, suggests a tier, asks to confirm
+bash reproduce.sh --tier quick --yes
+```
+
+Only the Saltelli base sample N and the replicate count R shrink; network size (300 agents),
+cascades per simulation (2,000), burn-in (1,000, MSER-validated), and every model parameter
+stay at their published values. The scaled design is the first `16 N` rows of the committed
+`sobol/design.csv`, which is byte-identical to the Saltelli sample SALib generates for that N
+with the same seed, so a scaled run visits a verbatim subset of the published design with the
+same common-random-number pairing.
+
+| Tier | N | R | Simulations | What it can check |
+|---|---|---|---|---|
+| `smoke` | 8 | 2 | 512 | the pipeline end-to-end (statistics too thin to interpret) |
+| `quick` | 128 | 2 | 8,192 | the flagship reach-equivalence TOST (128 clusters) and the S1/ST factor ranking |
+| `overnight` | 1024 | 2 | 65,536 | everything at full design resolution: all prevalence bins, the switchover profile, S2 interactions; the flagship TOST standard error is only ~5% above the published run |
+| `stochastic` | 1024 | 8 | 262,144 | additionally the stochastic-Sobol factor attributions |
+
+ETAs are printed at launch from a deliberately conservative throughput constant measured on
+the saturated production nodes (6.6 s per simulation per thread); a 16-thread desktop ran the
+`smoke` tier's simulations in under a minute, and every run prints its own measured constant.
+Each run is self-contained under `scaled_runs/<tier>_<tag>/` (its own sliced design, sweep,
+caches, evidence JSONs, figures, and Sobol tables) and touches nothing outside it.
+
+Two caveats, by design. First, scaled runs produce statistically valid but wider-CI numbers:
+compare them to the manuscript qualitatively (dominant factors and their ordering, the TOST
+conclusion, the direction and shape of the switchover profile), not digit-for-digit; the
+exact-value reproduction gates and anchor cross-checks apply only to the canonical full-scale
+data and are skipped with a notice on scaled runs. Second, no laptop-sized tier reaches the
+manuscript's designed power (alpha = 0.01, power = 0.95 at the SESOI); that requires the full
+491,520-pair sweep.
+
 ## Relation to the manuscript
 
 Where each headline result is produced; steps refer to `reproduce_analysis.sh`:
@@ -75,10 +115,13 @@ evidence JSONs built by `analysis/build_evidence.py` (step 5) and are rendered b
 
 | Path | Contents |
 |---|---|
+| `reproduce.sh` | Resource-adaptive entry point: suggests a reproduction tier from the detected hardware and runs it (see **Re-running the simulation itself**). |
 | `reproduce_analysis.sh` | One-command reproduction of every figure, table, and quantitative claim from the bundled data. |
 | `run_experiment_baseline.jl` | Baseline sweep: 7-factor Saltelli/Sobol design, uniform-random cascade seeding. |
 | `run_experiment_influencers.jl` | Influencer sweep: the same 7-factor design, hub seeding. |
 | `run_experiment_mser_probe.jl` | Burn-in adequacy probe (MSER-5): logs every cascade for a stratified subset of design points. |
+| `run_experiment_scaled.jl` | Scaled reviewer sweep: the unchanged model on a prefix of the committed design with fewer replicates; driven by `reproduce.sh`. |
+| `scaled_runs/` | Self-contained scaled-tier run directories (disposable output; not committed). |
 | `run_snellius_influencers.sh`, `run_snellius_baseline.sh` | SLURM job scripts for the influencer and baseline sweeps on the Snellius HPC cluster. |
 | `Project.toml`, `Manifest.toml` | Julia environment (pinned to Julia 1.12.6). |
 | `sobol/` | Sobol design generation (`make_design.py`), the committed deterministic design (`design.csv`), analysis (`analyze.py`, `analyze_svd.py`), sweep augmentation (`augment_sv.py`, adds the `avg_structural_virality` output to fresh sweeps), and the regenerated `results/`. |

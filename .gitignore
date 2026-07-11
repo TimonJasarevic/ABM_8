@@ -57,6 +57,7 @@ analysis/runs/tost_blocks/
 analysis/runs/loss_edge/
 analysis/runs/mean_field/
 analysis/runs/replication_justification/
+scaled_runs/
 
 # Misc
 *.zip

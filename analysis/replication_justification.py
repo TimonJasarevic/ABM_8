@@ -23,8 +23,8 @@ sys.path.insert(0, os.path.join(HERE, "lib"))
 import data_io
 import utils
 
-PROBE_DIR = os.path.join(HERE, "runs", "mser_probe")
-OUT_DIR = os.path.join(HERE, "runs", "replication_justification")
+PROBE_DIR = os.path.join(data_io.RUNS_DIR, "mser_probe")
+OUT_DIR = os.path.join(data_io.RUNS_DIR, "replication_justification")
 CACHE_DIR = data_io.NODECACHE_DIR
 BURN_IN_USED = 1000
 N_AGENTS = data_io.N_NODES
